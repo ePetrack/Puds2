@@ -68,11 +68,11 @@ perspective-viewer {
 }
 
 perspective-viewer:not([theme]) {
-  --theme--background: theme('colors.white');
-  --theme--color: theme('colors.gray.900');
+  --theme--background: #ffffff;
+  --theme--color: #111827;
 }
 
 .dark perspective-viewer:not([theme]) {
-  --theme--background: theme('colors.gray.800');
-  --theme--color: theme('colors.gray.100');
+  --theme--background: #1f2937;
+  --theme--color: #f3f4f6;
 }
