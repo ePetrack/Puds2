@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
+  import Toast from '$lib/components/ui/Toast.svelte';
 
   let { children } = $props();
   let sidebarOpen = $state(true);
@@ -176,3 +177,6 @@
     </main>
   </div>
 </div>
+
+<!-- Toast Notifications -->
+<Toast />
