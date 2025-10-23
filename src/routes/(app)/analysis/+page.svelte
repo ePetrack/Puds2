@@ -6,7 +6,10 @@
   let energyData = $state<any[]>([]);
   let loading = $state(true);
   let error = $state('');
-  let selectedView = $state<'consumption' | 'cost' | 'comparison'>('consumption');
+  let selectedView = $state<'consumption' | 'cost' | 'comparison' | 'trends' | 'demand' | 'fuel'>('consumption');
+  let startDate = $state('');
+  let endDate = $state('');
+  let filteredData = $state<any[]>([]);
 
   // Sample data for demonstration
   const sampleData = [
@@ -133,7 +136,18 @@
   ];
 
   onMount(async () => {
+    await loadData();
+    // Set default date range to last 90 days
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 90);
+    endDate = end.toISOString().split('T')[0];
+    startDate = start.toISOString().split('T')[0];
+  });
+
+  async function loadData() {
     try {
+      loading = true;
       if (!pb) {
         energyData = sampleData;
         loading = false;
@@ -165,6 +179,21 @@
     } finally {
       loading = false;
     }
+  }
+
+  // Filter data based on date range
+  $effect(() => {
+    if (!startDate && !endDate) {
+      filteredData = energyData;
+      return;
+    }
+
+    filteredData = energyData.filter(row => {
+      const rowDate = new Date(row.timestamp);
+      const start = startDate ? new Date(startDate) : new Date(0);
+      const end = endDate ? new Date(endDate) : new Date();
+      return rowDate >= start && rowDate <= end;
+    });
   });
 
   // Perspective configurations for different views
@@ -182,9 +211,9 @@
     },
     cost: {
       plugin: 'Y Line',
-      group_by: ['building'],
+      group_by: ['timestamp'],
       columns: ['cost'],
-      split_by: ['fuel_type'],
+      split_by: ['building'],
       aggregates: {
         cost: 'sum',
       },
@@ -198,6 +227,33 @@
         cost: 'sum',
       },
       sort: [['usage_kwh', 'desc']],
+    },
+    trends: {
+      plugin: 'Y Line',
+      group_by: ['timestamp'],
+      columns: ['usage_kwh'],
+      split_by: ['building', 'fuel_type'],
+      aggregates: {
+        usage_kwh: 'sum',
+      },
+    },
+    demand: {
+      plugin: 'Y Area',
+      group_by: ['timestamp'],
+      columns: ['demand_kw'],
+      split_by: ['building'],
+      aggregates: {
+        demand_kw: 'avg',
+      },
+    },
+    fuel: {
+      plugin: 'Sunburst',
+      group_by: ['fuel_type', 'building'],
+      columns: ['usage_kwh', 'cost'],
+      aggregates: {
+        usage_kwh: 'sum',
+        cost: 'sum',
+      },
     },
   };
 
@@ -239,37 +295,93 @@
         Interactive data analysis powered by Perspective.js
       </p>
     </div>
-    <button onclick={exportData} class="btn btn-secondary">
-      📥 Export CSV
-    </button>
+    <div class="flex gap-2">
+      <button onclick={loadData} class="btn btn-secondary" title="Refresh data">
+        🔄 Refresh
+      </button>
+      <button onclick={exportData} class="btn btn-secondary">
+        📥 Export CSV
+      </button>
+    </div>
+  </div>
+
+  <!-- Date Range Filter -->
+  <div class="card p-4">
+    <div class="flex items-center gap-4">
+      <div class="flex-1">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Start Date
+        </label>
+        <input
+          type="date"
+          bind:value={startDate}
+          class="input w-full"
+        />
+      </div>
+      <div class="flex-1">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          End Date
+        </label>
+        <input
+          type="date"
+          bind:value={endDate}
+          class="input w-full"
+        />
+      </div>
+      <div class="flex items-end">
+        <button
+          onclick={() => { startDate = ''; endDate = ''; }}
+          class="btn btn-secondary"
+        >
+          Clear Filters
+        </button>
+      </div>
+      <div class="flex items-end">
+        <div class="text-sm text-gray-600 dark:text-gray-400">
+          Showing <span class="font-semibold text-gray-900 dark:text-white">{filteredData.length}</span> of {energyData.length} records
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- View Selector -->
   <div class="card p-4">
-    <div class="flex gap-2">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
       <button
         onclick={() => selectedView = 'consumption'}
-        class="btn"
-        class:btn-primary={selectedView === 'consumption'}
-        class:btn-secondary={selectedView !== 'consumption'}
+        class="btn {selectedView === 'consumption' ? 'btn-primary' : 'btn-secondary'}"
       >
-        📊 Consumption Table
-      </button>
-      <button
-        onclick={() => selectedView = 'cost'}
-        class="btn"
-        class:btn-primary={selectedView === 'cost'}
-        class:btn-secondary={selectedView !== 'cost'}
-      >
-        📈 Cost Trends
+        📊 Data Table
       </button>
       <button
         onclick={() => selectedView = 'comparison'}
-        class="btn"
-        class:btn-primary={selectedView === 'comparison'}
-        class:btn-secondary={selectedView !== 'comparison'}
+        class="btn {selectedView === 'comparison' ? 'btn-primary' : 'btn-secondary'}"
       >
-        📊 Building Comparison
+        📊 Comparison
+      </button>
+      <button
+        onclick={() => selectedView = 'cost'}
+        class="btn {selectedView === 'cost' ? 'btn-primary' : 'btn-secondary'}"
+      >
+        💰 Cost Analysis
+      </button>
+      <button
+        onclick={() => selectedView = 'trends'}
+        class="btn {selectedView === 'trends' ? 'btn-primary' : 'btn-secondary'}"
+      >
+        📈 Usage Trends
+      </button>
+      <button
+        onclick={() => selectedView = 'demand'}
+        class="btn {selectedView === 'demand' ? 'btn-primary' : 'btn-secondary'}"
+      >
+        ⚡ Demand Profile
+      </button>
+      <button
+        onclick={() => selectedView = 'fuel'}
+        class="btn {selectedView === 'fuel' ? 'btn-primary' : 'btn-secondary'}"
+      >
+        🔥 Fuel Breakdown
       </button>
     </div>
   </div>
@@ -290,29 +402,40 @@
           <p>{error}</p>
         </div>
       </div>
-    {:else if energyData.length === 0}
+    {:else if filteredData.length === 0}
       <div class="flex items-center justify-center h-full">
         <div class="text-center text-gray-600 dark:text-gray-400">
           <p class="text-xl mb-2">📊 No data available</p>
-          <p>Import energy data to get started</p>
+          <p>
+            {#if energyData.length > 0}
+              No data matches your filter criteria. Try adjusting the date range.
+            {:else}
+              Import energy data to get started.
+            {/if}
+          </p>
         </div>
       </div>
     {:else}
-      <PerspectiveViewer data={energyData} config={viewConfigs[selectedView]} class="h-full" />
+      <PerspectiveViewer data={filteredData} config={viewConfigs[selectedView]} class="h-full" />
     {/if}
   </div>
 
   <!-- Instructions -->
   <div class="card p-4 bg-primary-50 dark:bg-primary-900/20">
     <h3 class="font-medium text-primary-900 dark:text-primary-100 mb-2">
-      💡 How to use Perspective.js
+      💡 Analysis Tools & Features
     </h3>
-    <ul class="text-sm text-primary-700 dark:text-primary-300 space-y-1">
-      <li>• Drag columns to "Group By" to pivot data</li>
-      <li>• Click column headers to sort</li>
-      <li>• Right-click on the table for more options</li>
-      <li>• Switch between different visualization types using the buttons above</li>
-      <li>• Use the export button to download data as CSV</li>
-    </ul>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <ul class="text-sm text-primary-700 dark:text-primary-300 space-y-1">
+        <li>• <strong>Date Filters:</strong> Narrow down data by date range</li>
+        <li>• <strong>6 View Types:</strong> Table, comparison, cost, trends, demand, and fuel breakdown</li>
+        <li>• <strong>Interactive:</strong> Drag columns to pivot, click headers to sort</li>
+      </ul>
+      <ul class="text-sm text-primary-700 dark:text-primary-300 space-y-1">
+        <li>• <strong>Export:</strong> Download filtered data as CSV</li>
+        <li>• <strong>Refresh:</strong> Reload data from the database</li>
+        <li>• <strong>Real-time:</strong> Data updates automatically as you import</li>
+      </ul>
+    </div>
   </div>
 </div>
