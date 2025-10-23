@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    container_name: energy_pocketbase
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./pb_data:/pb_data
+      - ./pb_migrations:/pb_migrations
+    command: serve --http=0.0.0.0:8090
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8090/api/health || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Uncomment to run the SvelteKit app in Docker
+  # web:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: energy_web
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5173:5173"
+  #   environment:
+  #     - VITE_POCKETBASE_URL=http://pocketbase:8090
+  #   depends_on:
+  #     pocketbase:
+  #       condition: service_healthy
+  #   volumes:
+  #     - .:/app
+  #     - /app/node_modules
+
+volumes:
+  pb_data:
