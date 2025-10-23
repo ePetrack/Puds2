@@ -1,0 +1,6 @@
+building_name,timestamp,fuel_type,usage_kwh,cost,demand_kw,meter_id
+Science Hall,2024-01-15 00:00:00,electricity,1250.5,187.58,450.2,METER-SCI-001
+Library Building,2024-01-15 00:00:00,electricity,890.3,133.55,320.1,METER-LIB-001
+Student Center,2024-01-15 00:00:00,natural_gas,2100.0,315.00,0,METER-STU-GAS-001
+Science Hall,2024-01-15 01:00:00,electricity,1180.2,177.03,425.5,METER-SCI-001
+Library Building,2024-01-15 01:00:00,electricity,845.7,126.86,305.8,METER-LIB-001

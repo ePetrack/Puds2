@@ -46,6 +46,9 @@ export interface Building {
   notes?: string;
   created: string;
   updated: string;
+  expand?: {
+    client?: Client;
+  };
 }
 
 export interface Project {
