@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+env:
+  DATABASE_URL: postgres://puds:puds@localhost:5432/puds_dev
+  DATABASE_URL_TEST: postgres://puds:puds@localhost:5432/puds_test
+  AUTH_SECRET: ci-secret-not-for-production
+  ORIGIN: http://localhost:4173
+
+jobs:
+  quality:
+    name: Lint, typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: puds
+          POSTGRES_PASSWORD: puds
+          POSTGRES_DB: puds_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U puds"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run check
+      - name: Create test database
+        run: PGPASSWORD=puds psql -h localhost -U puds -d puds_dev -c 'CREATE DATABASE puds_test;'
+      - name: Run migrations (unit test DB)
+        run: DATABASE_URL=$DATABASE_URL_TEST npm run db:migrate
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: puds
+          POSTGRES_PASSWORD: puds
+          POSTGRES_DB: puds_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U puds"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: npm run build
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
