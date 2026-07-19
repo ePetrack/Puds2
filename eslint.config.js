@@ -29,7 +29,10 @@ export default ts.config(
 		rules: {
 			'@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
 			// The app is served from the domain root; base-path-aware resolve() adds noise
-			'svelte/no-navigation-without-resolve': 'off'
+			'svelte/no-navigation-without-resolve': 'off',
+			// svelte-ignore comments target compiler warnings surfaced by svelte-check,
+			// which this eslint plugin can't see and would flag as unused
+			'svelte/no-unused-svelte-ignore': 'off'
 		}
 	},
 	{

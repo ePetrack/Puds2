@@ -86,9 +86,9 @@ See [.env.example](./.env.example). Required: `DATABASE_URL`, `AUTH_SECRET`, `OR
 
 - **M1 — Foundation** ✅ Postgres + migrations, auth + RBAC, audit logging, clients &
   buildings CRUD, tests, CI
-- **M2 — Energy data**: projects, meter/interval data, CSV import pipeline
-- **M3 — Utility management**: providers, accounts, meters, rate schedules, bills with
-  anomaly detection
+- **M2 — Utility management** ✅ providers, accounts, meters, rate schedules, bills with
+  anomaly detection, workflow, CSV import, spend dashboard
+- **M3 — Energy data**: projects, meter/interval data, CSV import pipeline
 - **M4 — Analytics & documents**: Perspective.js analysis, document storage, tasks
 - **M5 — Hardening**: rate limiting, metrics, backup/restore, deployment guide
 

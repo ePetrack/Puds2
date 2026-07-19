@@ -26,7 +26,8 @@
 	const navigation = [
 		{ name: 'Dashboard', href: '/', icon: '📊' },
 		{ name: 'Clients', href: '/clients', icon: '🏢' },
-		{ name: 'Buildings', href: '/buildings', icon: '🏛️' }
+		{ name: 'Buildings', href: '/buildings', icon: '🏛️' },
+		{ name: 'Utilities', href: '/utilities', icon: '💡' }
 	];
 
 	function isActive(href: string) {

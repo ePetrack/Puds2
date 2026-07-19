@@ -137,6 +137,170 @@ export const buildings = pgTable(
 	(t) => [index('buildings_client_id_idx').on(t.clientId), index('buildings_name_idx').on(t.name)]
 );
 
+// ---------------------------------------------------------------------------
+// Utility management
+// ---------------------------------------------------------------------------
+
+export const utilityType = pgEnum('utility_type', [
+	'electricity',
+	'natural_gas',
+	'water',
+	'sewer',
+	'steam',
+	'chilled_water',
+	'fuel_oil',
+	'propane',
+	'other'
+]);
+
+export const rateType = pgEnum('rate_type', ['flat', 'tiered', 'time_of_use', 'demand', 'custom']);
+export const accountStatus = pgEnum('account_status', ['active', 'pending', 'closed']);
+export const meterStatus = pgEnum('meter_status', ['active', 'inactive', 'retired']);
+export const meterUnit = pgEnum('meter_unit', [
+	'kwh',
+	'therms',
+	'ccf',
+	'mcf',
+	'gallons',
+	'kgal',
+	'cubic_meters',
+	'mlb',
+	'ton_hours',
+	'other'
+]);
+export const billStatus = pgEnum('bill_status', ['pending', 'approved', 'paid', 'disputed']);
+export const readingType = pgEnum('reading_type', ['actual', 'estimated']);
+
+export const utilityProviders = pgTable('utility_providers', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	utilityTypes: utilityType('utility_types').array().notNull().default([]),
+	accountManager: text('account_manager'),
+	phone: text('phone'),
+	email: text('email'),
+	website: text('website'),
+	address: text('address'),
+	notes: text('notes'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export const rateSchedules = pgTable(
+	'rate_schedules',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		providerId: uuid('provider_id')
+			.notNull()
+			.references(() => utilityProviders.id, { onDelete: 'cascade' }),
+		name: text('name').notNull(),
+		utilityType: utilityType('utility_type').notNull(),
+		rateType: rateType('rate_type').notNull(),
+		energyRate: numeric('energy_rate', { precision: 12, scale: 6 }),
+		demandRate: numeric('demand_rate', { precision: 12, scale: 4 }),
+		fixedMonthlyCharge: numeric('fixed_monthly_charge', { precision: 12, scale: 2 }),
+		unit: text('unit'),
+		effectiveDate: date('effective_date'),
+		endDate: date('end_date'),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [index('rate_schedules_provider_id_idx').on(t.providerId)]
+);
+
+export const utilityAccounts = pgTable(
+	'utility_accounts',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		clientId: uuid('client_id')
+			.notNull()
+			.references(() => clients.id, { onDelete: 'cascade' }),
+		providerId: uuid('provider_id')
+			.notNull()
+			.references(() => utilityProviders.id, { onDelete: 'restrict' }),
+		accountNumber: text('account_number').notNull(),
+		utilityType: utilityType('utility_type').notNull(),
+		status: accountStatus('status').notNull().default('active'),
+		rateScheduleId: uuid('rate_schedule_id').references(() => rateSchedules.id, {
+			onDelete: 'set null'
+		}),
+		serviceAddress: text('service_address'),
+		startDate: date('start_date'),
+		endDate: date('end_date'),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		index('utility_accounts_client_id_idx').on(t.clientId),
+		index('utility_accounts_account_number_idx').on(t.accountNumber)
+	]
+);
+
+export const meters = pgTable(
+	'meters',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		buildingId: uuid('building_id')
+			.notNull()
+			.references(() => buildings.id, { onDelete: 'cascade' }),
+		accountId: uuid('account_id').references(() => utilityAccounts.id, { onDelete: 'set null' }),
+		meterNumber: text('meter_number').notNull(),
+		utilityType: utilityType('utility_type').notNull(),
+		unit: meterUnit('unit').notNull(),
+		status: meterStatus('status').notNull().default('active'),
+		isSubmeter: boolean('is_submeter').notNull().default(false),
+		multiplier: numeric('multiplier', { precision: 10, scale: 4 }),
+		installDate: date('install_date'),
+		location: text('location'),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [index('meters_building_id_idx').on(t.buildingId)]
+);
+
+export const utilityBills = pgTable(
+	'utility_bills',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		accountId: uuid('account_id')
+			.notNull()
+			.references(() => utilityAccounts.id, { onDelete: 'cascade' }),
+		meterId: uuid('meter_id').references(() => meters.id, { onDelete: 'set null' }),
+		statementDate: date('statement_date').notNull(),
+		periodStart: date('period_start').notNull(),
+		periodEnd: date('period_end').notNull(),
+		dueDate: date('due_date'),
+		usage: numeric('usage', { precision: 14, scale: 3 }),
+		unit: text('unit'),
+		demandKw: numeric('demand_kw', { precision: 12, scale: 3 }),
+		energyCharge: numeric('energy_charge', { precision: 12, scale: 2 }),
+		demandCharge: numeric('demand_charge', { precision: 12, scale: 2 }),
+		fixedCharge: numeric('fixed_charge', { precision: 12, scale: 2 }),
+		taxesFees: numeric('taxes_fees', { precision: 12, scale: 2 }),
+		otherCharges: numeric('other_charges', { precision: 12, scale: 2 }),
+		totalCost: numeric('total_cost', { precision: 12, scale: 2 }).notNull(),
+		status: billStatus('status').notNull().default('pending'),
+		paymentDate: date('payment_date'),
+		readingType: readingType('reading_type'),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		index('utility_bills_account_id_idx').on(t.accountId),
+		index('utility_bills_period_end_idx').on(t.periodEnd)
+	]
+);
+
+export type UtilityProvider = typeof utilityProviders.$inferSelect;
+export type RateSchedule = typeof rateSchedules.$inferSelect;
+export type UtilityAccount = typeof utilityAccounts.$inferSelect;
+export type Meter = typeof meters.$inferSelect;
+export type UtilityBill = typeof utilityBills.$inferSelect;
+export type NewUtilityBill = typeof utilityBills.$inferInsert;
+
 export const auditAction = pgEnum('audit_action', ['create', 'update', 'delete']);
 
 export const auditLog = pgTable(
