@@ -27,7 +27,9 @@
 		{ name: 'Dashboard', href: '/', icon: '📊' },
 		{ name: 'Clients', href: '/clients', icon: '🏢' },
 		{ name: 'Buildings', href: '/buildings', icon: '🏛️' },
-		{ name: 'Utilities', href: '/utilities', icon: '💡' }
+		{ name: 'Projects', href: '/projects', icon: '📋' },
+		{ name: 'Utilities', href: '/utilities', icon: '💡' },
+		{ name: 'Energy Data', href: '/energy', icon: '⚡' }
 	];
 
 	function isActive(href: string) {

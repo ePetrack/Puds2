@@ -1,0 +1,4 @@
+meter_number,reading_date,usage,demand_kw,cost,reading_type,notes
+MTR-ELEC-001,2026-06-30,42500,180,7613.40,actual,
+MTR-ELEC-001,2026-07-31,51200,210,9071.48,actual,Summer peak
+MTR-GAS-001,2026-06-30,3200,,3552.00,actual,

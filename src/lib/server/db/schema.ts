@@ -9,7 +9,9 @@ import {
 	numeric,
 	date,
 	jsonb,
-	index
+	index,
+	uniqueIndex,
+	primaryKey
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
@@ -300,6 +302,84 @@ export type UtilityAccount = typeof utilityAccounts.$inferSelect;
 export type Meter = typeof meters.$inferSelect;
 export type UtilityBill = typeof utilityBills.$inferSelect;
 export type NewUtilityBill = typeof utilityBills.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Projects & energy data
+// ---------------------------------------------------------------------------
+
+export const projectStatus = pgEnum('project_status', [
+	'planning',
+	'approved',
+	'in_progress',
+	'completed',
+	'on_hold',
+	'cancelled'
+]);
+
+export const projects = pgTable(
+	'projects',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		clientId: uuid('client_id')
+			.notNull()
+			.references(() => clients.id, { onDelete: 'cascade' }),
+		name: text('name').notNull(),
+		description: text('description'),
+		status: projectStatus('status').notNull().default('planning'),
+		startDate: date('start_date'),
+		endDate: date('end_date'),
+		budget: numeric('budget', { precision: 14, scale: 2 }),
+		actualCost: numeric('actual_cost', { precision: 14, scale: 2 }),
+		expectedAnnualSavings: numeric('expected_annual_savings', { precision: 14, scale: 2 }),
+		actualAnnualSavings: numeric('actual_annual_savings', { precision: 14, scale: 2 }),
+		roiYears: numeric('roi_years', { precision: 8, scale: 2 }),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [index('projects_client_id_idx').on(t.clientId), index('projects_status_idx').on(t.status)]
+);
+
+export const projectBuildings = pgTable(
+	'project_buildings',
+	{
+		projectId: uuid('project_id')
+			.notNull()
+			.references(() => projects.id, { onDelete: 'cascade' }),
+		buildingId: uuid('building_id')
+			.notNull()
+			.references(() => buildings.id, { onDelete: 'cascade' })
+	},
+	(t) => [primaryKey({ columns: [t.projectId, t.buildingId] })]
+);
+
+export const readingSource = pgEnum('reading_source', ['manual', 'csv_import']);
+
+export const energyReadings = pgTable(
+	'energy_readings',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		meterId: uuid('meter_id')
+			.notNull()
+			.references(() => meters.id, { onDelete: 'cascade' }),
+		readingDate: date('reading_date').notNull(),
+		usage: numeric('usage', { precision: 14, scale: 3 }).notNull(),
+		demandKw: numeric('demand_kw', { precision: 12, scale: 3 }),
+		cost: numeric('cost', { precision: 12, scale: 2 }),
+		readingType: readingType('reading_type').notNull().default('actual'),
+		source: readingSource('source').notNull().default('manual'),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		uniqueIndex('energy_readings_meter_date_idx').on(t.meterId, t.readingDate),
+		index('energy_readings_reading_date_idx').on(t.readingDate)
+	]
+);
+
+export type Project = typeof projects.$inferSelect;
+export type EnergyReading = typeof energyReadings.$inferSelect;
 
 export const auditAction = pgEnum('audit_action', ['create', 'update', 'delete']);
 
