@@ -1,0 +1,4 @@
+account_number,statement_date,period_start,period_end,due_date,usage,unit,demand_kw,energy_charge,demand_charge,fixed_charge,taxes_fees,other_charges,total_cost,status,reading_type,notes
+100-2345-678,2026-06-05,2026-05-01,2026-05-31,2026-06-25,42500,kWh,180,4887.50,2250.00,45.00,430.90,0,7613.40,pending,actual,
+100-2345-678,2026-07-05,2026-06-01,2026-06-30,2026-07-25,51200,kWh,210,5888.00,2625.00,45.00,513.48,0,9071.48,pending,actual,Summer peak
+200-8765-432,2026-06-10,2026-05-05,2026-06-04,2026-06-30,3200,therms,,3552.00,,28.50,214.83,0,3795.33,pending,actual,
