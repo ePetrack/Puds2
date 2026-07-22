@@ -12,7 +12,8 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit together and
 
 ## Quick Start
 
-Prerequisites: Node.js 20+, Docker (for PostgreSQL).
+Prerequisites: **Node.js 20+**, **Docker** (for PostgreSQL), and **git**. Verify with
+`node -v` (should print v20 or newer) and `docker --version`.
 
 ```bash
 # 1. Get the code
@@ -22,13 +23,17 @@ cd Puds2
 # 2. Install dependencies
 npm install
 
-# 3. Start PostgreSQL
+# 3. Start PostgreSQL (runs in the background; the DB is named puds_dev)
 docker compose up -d db
 
 # 4. Configure environment
-cp .env.example .env   # defaults match docker-compose
+cp .env.example .env
+# Set a real signing secret (required for login to work). On macOS/Linux:
+sed -i.bak "s|^AUTH_SECRET=.*|AUTH_SECRET=$(openssl rand -hex 32)|" .env && rm .env.bak
+# On Windows, or by hand: open .env and replace AUTH_SECRET with any long random string.
+# The other defaults already match docker-compose — no edits needed.
 
-# 5. Create schema and demo data
+# 5. Create the schema and demo data
 npm run db:migrate
 npm run db:seed
 
@@ -36,7 +41,7 @@ npm run db:seed
 npm run dev
 ```
 
-Open http://localhost:5173 and sign in with a seeded account:
+Then open **http://localhost:5173** and sign in with a seeded account:
 
 | Email              | Password       | Role               |
 | ------------------ | -------------- | ------------------ |
@@ -46,6 +51,20 @@ Open http://localhost:5173 and sign in with a seeded account:
 
 There is no public self-registration; users are provisioned by administrators
 (or the seed script).
+
+To stop the database when you're done: `docker compose down` (add `-v` to also
+delete the data volume and start fresh).
+
+### Troubleshooting
+
+- **`npm run db:migrate` fails to connect** — Postgres may still be starting. Check
+  `docker compose ps` (the `db` service should be `healthy`), then retry.
+- **Port 5432 already in use** — another Postgres is running locally. Stop it, or change
+  the host port in `docker-compose.yml` (e.g. `'5433:5432'`) and update `DATABASE_URL`
+  in `.env` to match.
+- **Login fails / "invalid session"** — make sure `AUTH_SECRET` in `.env` is set to a
+  real value (step 4), not the `change-me…` placeholder, then restart `npm run dev`.
+- **Start over** — `docker compose down -v && docker compose up -d db && npm run db:migrate && npm run db:seed`.
 
 ## Scripts
 
