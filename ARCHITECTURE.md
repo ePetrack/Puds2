@@ -45,6 +45,15 @@ Every create/update/delete on a domain entity writes an `audit_log` row (actor, 
 entity id, action, shallow field diff) in the same transaction as the mutation
 (`src/lib/server/services/audit.ts`). The dashboard surfaces recent activity.
 
+## File storage
+
+Uploaded documents live on the local filesystem under `UPLOAD_DIR` (default
+`./uploads`), stored under generated UUID names — user-supplied file names never
+touch a filesystem path. Downloads stream through an authenticated endpoint with
+`Content-Disposition: attachment` so uploaded content never executes in the
+app's origin. The storage calls are isolated in
+`src/lib/server/services/documents.ts` for a later swap to object storage.
+
 ## Observability
 
 - **pino** structured logging; each request gets a UUID request id (returned as the

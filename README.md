@@ -90,7 +90,8 @@ See [.env.example](./.env.example). Required: `DATABASE_URL`, `AUTH_SECRET`, `OR
   anomaly detection, workflow, CSV import, spend dashboard
 - **M3 — Energy data** ✅ projects with budgets/savings and building scope, meter readings
   with monthly usage trends and CSV import
-- **M4 — Analytics & documents**: Perspective.js analysis, document storage, tasks
+- **M4 — Analytics & documents** ✅ Perspective.js interactive analysis over bills and
+  readings, document storage with streaming downloads, task tracking
 - **M5 — Hardening**: rate limiting, metrics, backup/restore, deployment guide
 
 ## License

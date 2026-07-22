@@ -381,6 +381,59 @@ export const energyReadings = pgTable(
 export type Project = typeof projects.$inferSelect;
 export type EnergyReading = typeof energyReadings.$inferSelect;
 
+// ---------------------------------------------------------------------------
+// Documents & tasks
+// ---------------------------------------------------------------------------
+
+export const documents = pgTable(
+	'documents',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		title: text('title').notNull(),
+		description: text('description'),
+		fileName: text('file_name').notNull(),
+		storedName: text('stored_name').notNull().unique(),
+		mimeType: text('mime_type').notNull(),
+		sizeBytes: integer('size_bytes').notNull(),
+		clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+		projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+		buildingId: uuid('building_id').references(() => buildings.id, { onDelete: 'set null' }),
+		uploadedBy: text('uploaded_by').references(() => user.id, { onDelete: 'set null' }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [index('documents_client_id_idx').on(t.clientId), index('documents_title_idx').on(t.title)]
+);
+
+export const taskStatus = pgEnum('task_status', ['todo', 'in_progress', 'completed', 'cancelled']);
+export const taskPriority = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
+
+export const tasks = pgTable(
+	'tasks',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		title: text('title').notNull(),
+		description: text('description'),
+		status: taskStatus('status').notNull().default('todo'),
+		priority: taskPriority('priority').notNull().default('medium'),
+		dueDate: date('due_date'),
+		assignedTo: text('assigned_to').references(() => user.id, { onDelete: 'set null' }),
+		projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+		clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+		createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		index('tasks_status_idx').on(t.status),
+		index('tasks_assigned_to_idx').on(t.assignedTo),
+		index('tasks_due_date_idx').on(t.dueDate)
+	]
+);
+
+export type Document = typeof documents.$inferSelect;
+export type Task = typeof tasks.$inferSelect;
+
 export const auditAction = pgEnum('audit_action', ['create', 'update', 'delete']);
 
 export const auditLog = pgTable(

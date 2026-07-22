@@ -410,6 +410,50 @@ async function main() {
 		console.log(`  ✅ ${readingCount} energy readings`);
 	}
 
+	// 7. Tasks
+	const { tasks } = await import('../src/lib/server/db/schema');
+	const existingTasks = await db.select().from(tasks).limit(1);
+	if (existingTasks.length > 0) {
+		console.log('  ⏭️  tasks already exist, skipping');
+	} else {
+		const admin = await db.query.user.findFirst({ where: eq(user.email, 'admin@demo.com') });
+		const sarah = await db.query.user.findFirst({ where: eq(user.email, 'sarah@energy.com') });
+		const projectRows = await db.select().from(projects);
+		const hvacProject = projectRows.find((p) => p.name.startsWith('HVAC'));
+
+		const soon = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+		await db.insert(tasks).values([
+			{
+				title: 'Review HVAC installation progress',
+				status: 'in_progress',
+				priority: 'high',
+				dueDate: soon,
+				assignedTo: sarah?.id ?? null,
+				projectId: hvacProject?.id ?? null,
+				clientId: clientIds['State University'],
+				createdBy: admin?.id ?? null
+			},
+			{
+				title: 'Prepare quarterly energy report',
+				status: 'todo',
+				priority: 'medium',
+				dueDate: soon,
+				assignedTo: sarah?.id ?? null,
+				clientId: clientIds['State University'],
+				createdBy: admin?.id ?? null
+			},
+			{
+				title: 'Verify July utility bill anomalies',
+				status: 'todo',
+				priority: 'urgent',
+				assignedTo: admin?.id ?? null,
+				clientId: clientIds['State University'],
+				createdBy: admin?.id ?? null
+			}
+		]);
+		console.log('  ✅ 3 tasks');
+	}
+
 	console.log('\n🎉 Seeding complete. Log in with admin@demo.com / admin123!');
 	process.exit(0);
 }

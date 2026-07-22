@@ -29,7 +29,10 @@
 		{ name: 'Buildings', href: '/buildings', icon: '🏛️' },
 		{ name: 'Projects', href: '/projects', icon: '📋' },
 		{ name: 'Utilities', href: '/utilities', icon: '💡' },
-		{ name: 'Energy Data', href: '/energy', icon: '⚡' }
+		{ name: 'Energy Data', href: '/energy', icon: '⚡' },
+		{ name: 'Analysis', href: '/analysis', icon: '📈' },
+		{ name: 'Tasks', href: '/tasks', icon: '✅' },
+		{ name: 'Documents', href: '/documents', icon: '📁' }
 	];
 
 	function isActive(href: string) {
