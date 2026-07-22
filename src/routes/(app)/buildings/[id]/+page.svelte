@@ -66,6 +66,36 @@
 						<dt class="text-gray-500 dark:text-gray-400">Address</dt>
 						<dd class="text-gray-900 dark:text-white">{data.building.address || '-'}</dd>
 					</div>
+					<div>
+						<dt class="text-gray-500 dark:text-gray-400">Campus</dt>
+						<dd class="text-gray-900 dark:text-white">
+							{#if data.building.campusId && data.building.campusName}
+								<a
+									href="/campuses/{data.building.campusId}"
+									class="text-primary-600 hover:underline dark:text-primary-400"
+								>
+									{data.building.campusName}
+								</a>
+							{:else}
+								-
+							{/if}
+						</dd>
+					</div>
+					<div>
+						<dt class="text-gray-500 dark:text-gray-400">Complex</dt>
+						<dd class="text-gray-900 dark:text-white">
+							{#if data.building.complexId && data.building.complexName}
+								<a
+									href="/complexes/{data.building.complexId}"
+									class="text-primary-600 hover:underline dark:text-primary-400"
+								>
+									{data.building.complexName}
+								</a>
+							{:else}
+								-
+							{/if}
+						</dd>
+					</div>
 				</dl>
 			</div>
 

@@ -26,6 +26,8 @@
 	const navigation = [
 		{ name: 'Dashboard', href: '/', icon: '📊' },
 		{ name: 'Clients', href: '/clients', icon: '🏢' },
+		{ name: 'Campuses', href: '/campuses', icon: '🎓' },
+		{ name: 'Complexes', href: '/complexes', icon: '🏘️' },
 		{ name: 'Buildings', href: '/buildings', icon: '🏛️' },
 		{ name: 'Projects', href: '/projects', icon: '📋' },
 		{ name: 'Utilities', href: '/utilities', icon: '💡' },

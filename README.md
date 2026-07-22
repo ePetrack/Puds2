@@ -92,7 +92,10 @@ See [.env.example](./.env.example). Required: `DATABASE_URL`, `AUTH_SECRET`, `OR
   with monthly usage trends and CSV import
 - **M4 — Analytics & documents** ✅ Perspective.js interactive analysis over bills and
   readings, document storage with streaming downloads, task tracking
-- **M5 — Hardening**: rate limiting, metrics, backup/restore, deployment guide
+- **M5 — Physical hierarchy** ✅ campuses and complexes under clients, building
+  parentage, complex master meters, and parent/child submeters with type & cycle
+  validation
+- **M6 — Hardening**: rate limiting, metrics, backup/restore, deployment guide
 
 ## License
 

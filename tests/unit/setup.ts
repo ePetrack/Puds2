@@ -3,7 +3,7 @@ import { db } from '$lib/server/db';
 
 /** Wipe domain tables between tests. Auth tables are left alone. */
 export async function resetDomainTables(): Promise<void> {
-	await db.execute(sql`TRUNCATE TABLE audit_log, buildings, clients CASCADE`);
+	await db.execute(sql`TRUNCATE TABLE audit_log, campuses, complexes, buildings, clients CASCADE`);
 }
 
 export const TEST_ACTOR = 'test-actor';

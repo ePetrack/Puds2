@@ -77,19 +77,26 @@ export const utilityAccountSchema = z.object({
 });
 export type UtilityAccountInput = z.infer<typeof utilityAccountSchema>;
 
-export const meterSchema = z.object({
-	buildingId: z.string().uuid('Building is required'),
-	accountId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
-	meterNumber: z.string().trim().min(1, 'Meter number is required').max(100),
-	utilityType: z.enum(UTILITY_TYPES),
-	unit: z.enum(METER_UNITS),
-	status: z.enum(METER_STATUSES),
-	isSubmeter: z.preprocess((v) => v === 'on' || v === true, z.boolean()).default(false),
-	multiplier: optionalNumber({ min: 0 }),
-	installDate: optionalDate(),
-	location: optionalText(200),
-	notes: optionalText(10_000)
-});
+export const meterSchema = z
+	.object({
+		// Premise is exactly one of a building or a complex (enforced by the refine below).
+		buildingId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+		complexId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+		parentMeterId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+		accountId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+		meterNumber: z.string().trim().min(1, 'Meter number is required').max(100),
+		utilityType: z.enum(UTILITY_TYPES),
+		unit: z.enum(METER_UNITS),
+		status: z.enum(METER_STATUSES),
+		multiplier: optionalNumber({ min: 0 }),
+		installDate: optionalDate(),
+		location: optionalText(200),
+		notes: optionalText(10_000)
+	})
+	.refine((d) => (d.buildingId ? 1 : 0) + (d.complexId ? 1 : 0) === 1, {
+		message: 'Select exactly one premise: a building or a complex',
+		path: ['buildingId']
+	});
 export type MeterInput = z.infer<typeof meterSchema>;
 
 export const utilityBillSchema = z

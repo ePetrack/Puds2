@@ -1,24 +1,24 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import MeterForm from '$lib/components/utilities/MeterForm.svelte';
+	import ComplexForm from '$lib/components/complexes/ComplexForm.svelte';
 
 	let { data, form } = $props();
 	let submitting = $state(false);
 </script>
 
 <svelte:head>
-	<title>Add Meter - Energy Management Platform</title>
+	<title>Edit {data.complexName} - Energy Management Platform</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl space-y-6">
 	<div>
 		<a
-			href="/utilities/meters"
+			href="/complexes/{data.complexId}"
 			class="mb-2 inline-block text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
 		>
-			← Back to Meters
+			← Back to {data.complexName}
 		</a>
-		<h1 class="text-3xl font-bold text-gray-900 dark:text-white">Add Meter</h1>
+		<h1 class="text-3xl font-bold text-gray-900 dark:text-white">Edit Complex</h1>
 	</div>
 
 	<form
@@ -31,15 +31,13 @@
 			};
 		}}
 	>
-		<MeterForm
-			values={form?.values ?? {}}
+		<ComplexForm
+			values={form?.values ?? data.values}
 			errors={form?.errors ?? {}}
-			buildingOptions={data.buildingOptions}
-			complexOptions={data.complexOptions}
-			parentMeterOptions={data.parentMeterOptions}
-			accountOptions={data.accountOptions}
-			submitLabel="Create Meter"
-			cancelHref="/utilities/meters"
+			clientOptions={data.clientOptions}
+			campusOptions={data.campusOptions}
+			submitLabel="Save Changes"
+			cancelHref="/complexes/{data.complexId}"
 			{submitting}
 		/>
 	</form>

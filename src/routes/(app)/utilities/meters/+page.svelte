@@ -93,7 +93,7 @@
 							>
 							<th
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
-								>Building</th
+								>Premise</th
 							>
 							<th
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
@@ -125,13 +125,23 @@
 									{#if meter.isSubmeter}
 										<span
 											class="ml-2 inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+											title={meter.parentMeterNumber
+												? `Submeter of ${meter.parentMeterNumber}`
+												: 'Submeter'}
 										>
-											Submeter
+											{meter.parentMeterNumber ? `↳ ${meter.parentMeterNumber}` : 'Submeter'}
 										</span>
 									{/if}
 								</td>
 								<td class="whitespace-nowrap px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-									{meter.buildingName ?? '-'}
+									{meter.premiseName ?? '-'}
+									{#if meter.complexName}
+										<span
+											class="ml-1 inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+										>
+											Complex
+										</span>
+									{/if}
 								</td>
 								<td class="whitespace-nowrap px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
 									{formatEnumLabel(meter.utilityType)}
