@@ -326,6 +326,90 @@ async function main() {
 		console.log(`  ✅ ${billCount} utility bills`);
 	}
 
+	// 5. Projects
+	const { projects, projectBuildings, energyReadings } =
+		await import('../src/lib/server/db/schema');
+
+	const existingProjects = await db.select().from(projects);
+	if (existingProjects.length > 0) {
+		console.log('  ⏭️  projects already exist, skipping');
+	} else {
+		const [hvac] = await db
+			.insert(projects)
+			.values({
+				clientId: clientIds['State University'],
+				name: 'HVAC Upgrade - Science Hall',
+				description: 'Replace aging air handlers and add variable frequency drives.',
+				status: 'in_progress',
+				startDate: '2026-03-01',
+				endDate: '2026-12-31',
+				budget: '450000',
+				actualCost: '280000',
+				expectedAnnualSavings: '65000',
+				roiYears: '6.9'
+			})
+			.returning();
+		await db.insert(projectBuildings).values({
+			projectId: hvac.id,
+			buildingId: buildingIds['Science Hall']
+		});
+
+		const [led] = await db
+			.insert(projects)
+			.values({
+				clientId: clientIds['State University'],
+				name: 'LED Lighting Retrofit - Campus Wide',
+				description: 'Campus-wide LED conversion with occupancy controls.',
+				status: 'completed',
+				startDate: '2025-09-01',
+				endDate: '2026-02-28',
+				budget: '180000',
+				actualCost: '165000',
+				expectedAnnualSavings: '42000',
+				actualAnnualSavings: '45000',
+				roiYears: '3.7'
+			})
+			.returning();
+		await db.insert(projectBuildings).values([
+			{ projectId: led.id, buildingId: buildingIds['Science Hall'] },
+			{ projectId: led.id, buildingId: buildingIds['Student Center'] },
+			{ projectId: led.id, buildingId: buildingIds['Main Library'] }
+		]);
+		console.log('  ✅ 2 projects');
+	}
+
+	// 6. Energy readings (12 months per seeded meter, mirroring bill seasonality)
+	const existingReadings = await db.select().from(energyReadings).limit(1);
+	if (existingReadings.length > 0) {
+		console.log('  ⏭️  energy readings already exist, skipping');
+	} else {
+		const seededMeters = await db.select().from(meters);
+		let readingCount = 0;
+		const rToday = new Date();
+		for (const meter of seededMeters) {
+			for (let monthsAgo = 11; monthsAgo >= 0; monthsAgo--) {
+				const periodEnd = new Date(rToday.getFullYear(), rToday.getMonth() - monthsAgo + 1, 0);
+				const month = periodEnd.getMonth();
+				const isElectric = meter.utilityType === 'electricity';
+				const factor = isElectric
+					? 1 + 0.35 * Math.cos(((month - 6) / 12) * 2 * Math.PI)
+					: 1 + 0.6 * Math.cos((month / 12) * 2 * Math.PI);
+				const base = isElectric ? 40000 : 2800;
+				const usage = Math.round(base * factor + Math.random() * base * 0.05);
+				await db.insert(energyReadings).values({
+					meterId: meter.id,
+					readingDate: periodEnd.toISOString().split('T')[0],
+					usage: String(usage),
+					demandKw: isElectric ? String(Math.round(160 * factor)) : null,
+					readingType: 'actual',
+					source: 'csv_import'
+				});
+				readingCount++;
+			}
+		}
+		console.log(`  ✅ ${readingCount} energy readings`);
+	}
+
 	console.log('\n🎉 Seeding complete. Log in with admin@demo.com / admin123!');
 	process.exit(0);
 }
