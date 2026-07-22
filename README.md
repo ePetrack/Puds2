@@ -15,20 +15,24 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit together and
 Prerequisites: Node.js 20+, Docker (for PostgreSQL).
 
 ```bash
-# 1. Install dependencies
+# 1. Get the code
+git clone https://github.com/ePetrack/Puds2.git
+cd Puds2
+
+# 2. Install dependencies
 npm install
 
-# 2. Start PostgreSQL
+# 3. Start PostgreSQL
 docker compose up -d db
 
-# 3. Configure environment
+# 4. Configure environment
 cp .env.example .env   # defaults match docker-compose
 
-# 4. Create schema and demo data
+# 5. Create schema and demo data
 npm run db:migrate
 npm run db:seed
 
-# 5. Run the app
+# 6. Run the app
 npm run dev
 ```
 
