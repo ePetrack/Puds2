@@ -20,6 +20,10 @@ Prerequisites: **Node.js 20+**, **Docker** (for PostgreSQL), and **git**. Verify
 git clone https://github.com/ePetrack/Puds2.git
 cd Puds2
 
+# The newest work (M4 analytics/documents/tasks, M5 campuses/complexes/submeters)
+# lives on this branch until its PR merges. Skip if you only want the merged base.
+git checkout claude/utility-management-software-1qcj88
+
 # 2. Install dependencies
 npm install
 
@@ -97,6 +101,10 @@ End-to-end tests run against the production build backed by the seeded dev datab
 npm run db:migrate && npm run db:seed && npm run build
 npm run test:e2e
 ```
+
+Note: the e2e suite creates records in `puds_dev` (clients, campuses, meters, …) and
+leaves them behind, so your dev data will accumulate `E2E …` rows. Reset with
+`docker compose down -v && docker compose up -d db && npm run db:migrate && npm run db:seed`.
 
 CI (GitHub Actions) runs the full gate on every push: lint → typecheck → unit tests →
 build → e2e.
