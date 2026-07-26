@@ -42,8 +42,7 @@ beforeEach(async () => {
 		meterNumber: 'MTR-100',
 		utilityType: 'electricity',
 		unit: 'kwh',
-		status: 'active',
-		isSubmeter: false
+		status: 'active'
 	});
 	meterId = meter.id;
 });

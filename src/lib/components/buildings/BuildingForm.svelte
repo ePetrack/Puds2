@@ -6,6 +6,8 @@
 		values?: Record<string, string>;
 		errors?: Record<string, string>;
 		clientOptions: { id: string; name: string }[];
+		campusOptions?: { id: string; name: string; clientId: string }[];
+		complexOptions?: { id: string; name: string; clientId: string; campusId: string | null }[];
 		submitLabel: string;
 		cancelHref: string;
 		submitting?: boolean;
@@ -15,10 +17,29 @@
 		values = {},
 		errors = {},
 		clientOptions,
+		campusOptions = [],
+		complexOptions = [],
 		submitLabel,
 		cancelHref,
 		submitting = false
 	}: Props = $props();
+
+	// Campus/complex are optional and scoped to the chosen client.
+	// svelte-ignore state_referenced_locally
+	let selectedClient = $state(values.clientId ?? '');
+	// svelte-ignore state_referenced_locally
+	let selectedCampus = $state(values.campusId ?? '');
+
+	let filteredCampuses = $derived(
+		campusOptions.filter((c) => !selectedClient || c.clientId === selectedClient)
+	);
+	let filteredComplexes = $derived(
+		complexOptions.filter(
+			(c) =>
+				(!selectedClient || c.clientId === selectedClient) &&
+				(!selectedCampus || c.campusId === selectedCampus)
+		)
+	);
 
 	function typeLabel(value: string) {
 		return value.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
@@ -30,12 +51,10 @@
 		<h2 class="mb-4 text-xl font-semibold text-gray-900 dark:text-white">Basic Information</h2>
 		<div class="space-y-4">
 			<FormField label="Client" required error={errors.clientId}>
-				<select name="clientId" required class="input">
-					<option value="" disabled selected={!values.clientId}>Select a client</option>
+				<select name="clientId" required class="input" bind:value={selectedClient}>
+					<option value="" disabled>Select a client</option>
 					{#each clientOptions as client (client.id)}
-						<option value={client.id} selected={values.clientId === client.id}>
-							{client.name}
-						</option>
+						<option value={client.id}>{client.name}</option>
 					{/each}
 				</select>
 			</FormField>
@@ -49,6 +68,37 @@
 					placeholder="e.g., Science Hall"
 				/>
 			</FormField>
+
+			<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+				<FormField
+					label="Campus"
+					hint="Optional grouping within the client"
+					error={errors.campusId}
+				>
+					<select name="campusId" class="input" bind:value={selectedCampus}>
+						<option value="">None</option>
+						{#each filteredCampuses as campus (campus.id)}
+							<option value={campus.id} selected={values.campusId === campus.id}>
+								{campus.name}
+							</option>
+						{/each}
+					</select>
+				</FormField>
+				<FormField
+					label="Complex"
+					hint="Optional premise: buildings served by one meter"
+					error={errors.complexId}
+				>
+					<select name="complexId" class="input">
+						<option value="">None</option>
+						{#each filteredComplexes as complex (complex.id)}
+							<option value={complex.id} selected={values.complexId === complex.id}>
+								{complex.name}
+							</option>
+						{/each}
+					</select>
+				</FormField>
+			</div>
 
 			<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 				<FormField label="Building Type" error={errors.buildingType}>

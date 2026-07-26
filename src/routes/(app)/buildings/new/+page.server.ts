@@ -4,13 +4,21 @@ import { buildingSchema } from '$lib/schemas/building';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { createBuilding } from '$lib/server/services/buildings';
 import { listClients } from '$lib/server/services/clients';
+import { listCampusOptions } from '$lib/server/services/campuses';
+import { listComplexOptions } from '$lib/server/services/complexes';
 import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
-	const clientsPage = await listClients({ perPage: 100 });
+	const [clientsPage, campusOptions, complexOptions] = await Promise.all([
+		listClients({ perPage: 100 }),
+		listCampusOptions(),
+		listComplexOptions()
+	]);
 	return {
 		clientOptions: clientsPage.items.map((c) => ({ id: c.id, name: c.name })),
+		campusOptions,
+		complexOptions,
 		preselectedClient: url.searchParams.get('client') ?? ''
 	};
 };

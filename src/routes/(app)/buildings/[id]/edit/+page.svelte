@@ -35,6 +35,8 @@
 			values={form?.values ?? data.values}
 			errors={form?.errors ?? {}}
 			clientOptions={data.clientOptions}
+			campusOptions={data.campusOptions}
+			complexOptions={data.complexOptions}
 			submitLabel="Save Changes"
 			cancelHref="/buildings/{data.buildingId}"
 			{submitting}

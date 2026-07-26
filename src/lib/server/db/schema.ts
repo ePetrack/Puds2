@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
 	pgTable,
 	pgEnum,
@@ -11,7 +12,9 @@ import {
 	jsonb,
 	index,
 	uniqueIndex,
-	primaryKey
+	primaryKey,
+	check,
+	type AnyPgColumn
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
@@ -118,6 +121,53 @@ export const clients = pgTable(
 	(t) => [index('clients_name_idx').on(t.name), index('clients_status_idx').on(t.status)]
 );
 
+// ---------------------------------------------------------------------------
+// Physical hierarchy: Client → Campus (optional) → Complex (optional premise)
+//                      → Building. A Complex is "multiple buildings served by one
+//                      meter" (DOE BEDES "Campus"); Campus is a broader grouping.
+// ---------------------------------------------------------------------------
+
+export const campuses = pgTable(
+	'campuses',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		clientId: uuid('client_id')
+			.notNull()
+			.references(() => clients.id, { onDelete: 'cascade' }),
+		name: text('name').notNull(),
+		code: text('code'),
+		address: text('address'),
+		city: text('city'),
+		state: text('state'),
+		zip: text('zip'),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [index('campuses_client_id_idx').on(t.clientId), index('campuses_name_idx').on(t.name)]
+);
+
+export const complexes = pgTable(
+	'complexes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		clientId: uuid('client_id')
+			.notNull()
+			.references(() => clients.id, { onDelete: 'cascade' }),
+		campusId: uuid('campus_id').references(() => campuses.id, { onDelete: 'set null' }),
+		name: text('name').notNull(),
+		code: text('code'),
+		description: text('description'),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		index('complexes_client_id_idx').on(t.clientId),
+		index('complexes_campus_id_idx').on(t.campusId)
+	]
+);
+
 export const buildings = pgTable(
 	'buildings',
 	{
@@ -125,6 +175,8 @@ export const buildings = pgTable(
 		clientId: uuid('client_id')
 			.notNull()
 			.references(() => clients.id, { onDelete: 'cascade' }),
+		campusId: uuid('campus_id').references(() => campuses.id, { onDelete: 'set null' }),
+		complexId: uuid('complex_id').references(() => complexes.id, { onDelete: 'set null' }),
 		name: text('name').notNull(),
 		buildingType: buildingType('building_type'),
 		squareFootage: integer('square_footage'),
@@ -136,7 +188,12 @@ export const buildings = pgTable(
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
-	(t) => [index('buildings_client_id_idx').on(t.clientId), index('buildings_name_idx').on(t.name)]
+	(t) => [
+		index('buildings_client_id_idx').on(t.clientId),
+		index('buildings_campus_id_idx').on(t.campusId),
+		index('buildings_complex_id_idx').on(t.complexId),
+		index('buildings_name_idx').on(t.name)
+	]
 );
 
 // ---------------------------------------------------------------------------
@@ -243,9 +300,14 @@ export const meters = pgTable(
 	'meters',
 	{
 		id: uuid('id').primaryKey().defaultRandom(),
-		buildingId: uuid('building_id')
-			.notNull()
-			.references(() => buildings.id, { onDelete: 'cascade' }),
+		// A meter's premise is exactly one of a building OR a complex (see check
+		// constraint below). A complex meter is the "master" serving several buildings.
+		buildingId: uuid('building_id').references(() => buildings.id, { onDelete: 'cascade' }),
+		complexId: uuid('complex_id').references(() => complexes.id, { onDelete: 'cascade' }),
+		// Self-referential parent for submeter trees (parent feeds this meter).
+		parentMeterId: uuid('parent_meter_id').references((): AnyPgColumn => meters.id, {
+			onDelete: 'set null'
+		}),
 		accountId: uuid('account_id').references(() => utilityAccounts.id, { onDelete: 'set null' }),
 		meterNumber: text('meter_number').notNull(),
 		utilityType: utilityType('utility_type').notNull(),
@@ -259,7 +321,16 @@ export const meters = pgTable(
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
-	(t) => [index('meters_building_id_idx').on(t.buildingId)]
+	(t) => [
+		index('meters_building_id_idx').on(t.buildingId),
+		index('meters_complex_id_idx').on(t.complexId),
+		index('meters_parent_meter_id_idx').on(t.parentMeterId),
+		// Exactly one premise: a building XOR a complex.
+		check(
+			'meters_premise_chk',
+			sql`(${t.buildingId} is not null)::int + (${t.complexId} is not null)::int = 1`
+		)
+	]
 );
 
 export const utilityBills = pgTable(
@@ -381,6 +452,59 @@ export const energyReadings = pgTable(
 export type Project = typeof projects.$inferSelect;
 export type EnergyReading = typeof energyReadings.$inferSelect;
 
+// ---------------------------------------------------------------------------
+// Documents & tasks
+// ---------------------------------------------------------------------------
+
+export const documents = pgTable(
+	'documents',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		title: text('title').notNull(),
+		description: text('description'),
+		fileName: text('file_name').notNull(),
+		storedName: text('stored_name').notNull().unique(),
+		mimeType: text('mime_type').notNull(),
+		sizeBytes: integer('size_bytes').notNull(),
+		clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+		projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+		buildingId: uuid('building_id').references(() => buildings.id, { onDelete: 'set null' }),
+		uploadedBy: text('uploaded_by').references(() => user.id, { onDelete: 'set null' }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [index('documents_client_id_idx').on(t.clientId), index('documents_title_idx').on(t.title)]
+);
+
+export const taskStatus = pgEnum('task_status', ['todo', 'in_progress', 'completed', 'cancelled']);
+export const taskPriority = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
+
+export const tasks = pgTable(
+	'tasks',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		title: text('title').notNull(),
+		description: text('description'),
+		status: taskStatus('status').notNull().default('todo'),
+		priority: taskPriority('priority').notNull().default('medium'),
+		dueDate: date('due_date'),
+		assignedTo: text('assigned_to').references(() => user.id, { onDelete: 'set null' }),
+		projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+		clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+		createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		index('tasks_status_idx').on(t.status),
+		index('tasks_assigned_to_idx').on(t.assignedTo),
+		index('tasks_due_date_idx').on(t.dueDate)
+	]
+);
+
+export type Document = typeof documents.$inferSelect;
+export type Task = typeof tasks.$inferSelect;
+
 export const auditAction = pgEnum('audit_action', ['create', 'update', 'delete']);
 
 export const auditLog = pgTable(
@@ -403,6 +527,10 @@ export const auditLog = pgTable(
 export type User = typeof user.$inferSelect;
 export type Client = typeof clients.$inferSelect;
 export type NewClient = typeof clients.$inferInsert;
+export type Campus = typeof campuses.$inferSelect;
+export type NewCampus = typeof campuses.$inferInsert;
+export type Complex = typeof complexes.$inferSelect;
+export type NewComplex = typeof complexes.$inferInsert;
 export type Building = typeof buildings.$inferSelect;
 export type NewBuilding = typeof buildings.$inferInsert;
 export type AuditLogEntry = typeof auditLog.$inferSelect;

@@ -4,13 +4,17 @@ import { buildingSchema } from '$lib/schemas/building';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { getBuilding, updateBuilding } from '$lib/server/services/buildings';
 import { listClients } from '$lib/server/services/clients';
+import { listCampusOptions } from '$lib/server/services/campuses';
+import { listComplexOptions } from '$lib/server/services/complexes';
 import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
-	const [building, clientsPage] = await Promise.all([
+	const [building, clientsPage, campusOptions, complexOptions] = await Promise.all([
 		getBuilding(params.id),
-		listClients({ perPage: 100 })
+		listClients({ perPage: 100 }),
+		listCampusOptions(),
+		listComplexOptions()
 	]);
 	if (!building) {
 		error(404, 'Building not found');
@@ -19,6 +23,8 @@ export const load: PageServerLoad = async ({ params }) => {
 	return {
 		values: {
 			clientId: building.clientId,
+			campusId: building.campusId ?? '',
+			complexId: building.complexId ?? '',
 			name: building.name,
 			buildingType: building.buildingType ?? '',
 			squareFootage: building.squareFootage?.toString() ?? '',
@@ -29,6 +35,8 @@ export const load: PageServerLoad = async ({ params }) => {
 			notes: building.notes ?? ''
 		} as Record<string, string>,
 		clientOptions: clientsPage.items.map((c) => ({ id: c.id, name: c.name })),
+		campusOptions,
+		complexOptions,
 		buildingId: building.id,
 		buildingName: building.name
 	};

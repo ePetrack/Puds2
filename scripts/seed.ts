@@ -13,7 +13,8 @@ async function main() {
 	// Import after ALLOW_SIGNUP is set so the auth instance permits sign-up
 	const { auth } = await import('../src/lib/server/auth');
 	const { db } = await import('../src/lib/server/db');
-	const { user, clients, buildings } = await import('../src/lib/server/db/schema');
+	const { user, clients, campuses, complexes, buildings } =
+		await import('../src/lib/server/db/schema');
 
 	console.log('🌱 Seeding database...\n');
 
@@ -145,6 +146,66 @@ async function main() {
 		console.log(`  ✅ building ${b.name}`);
 	}
 
+	// 3b. Physical hierarchy: campus + complex (a premise served by one master meter)
+	let mainCampusId: string;
+	let plantComplexId: string;
+	{
+		const suClient = clientIds['State University'];
+		let campus = await db.query.campuses.findFirst({
+			where: eq(campuses.name, 'Main Campus')
+		});
+		if (!campus) {
+			[campus] = await db
+				.insert(campuses)
+				.values({
+					clientId: suClient,
+					name: 'Main Campus',
+					code: 'MAIN',
+					city: 'University City',
+					state: 'CA'
+				})
+				.returning();
+			console.log('  ✅ campus Main Campus');
+		} else {
+			console.log('  ⏭️  campus Main Campus already exists');
+		}
+		mainCampusId = campus.id;
+
+		let complex = await db.query.complexes.findFirst({
+			where: eq(complexes.name, 'Central Utility Plant District')
+		});
+		if (!complex) {
+			[complex] = await db
+				.insert(complexes)
+				.values({
+					clientId: suClient,
+					campusId: mainCampusId,
+					name: 'Central Utility Plant District',
+					code: 'CUP',
+					description: 'Buildings served by the central plant master electric meter.'
+				})
+				.returning();
+			console.log('  ✅ complex Central Utility Plant District');
+		} else {
+			console.log('  ⏭️  complex Central Utility Plant District already exists');
+		}
+		plantComplexId = complex.id;
+
+		// Place buildings in the campus; two of them share the complex master meter.
+		await db
+			.update(buildings)
+			.set({ campusId: mainCampusId, complexId: plantComplexId })
+			.where(eq(buildings.id, buildingIds['Science Hall']));
+		await db
+			.update(buildings)
+			.set({ campusId: mainCampusId, complexId: plantComplexId })
+			.where(eq(buildings.id, buildingIds['Student Center']));
+		await db
+			.update(buildings)
+			.set({ campusId: mainCampusId })
+			.where(eq(buildings.id, buildingIds['Main Library']));
+	}
+
 	// 4. Utility management data
 	const { utilityProviders, rateSchedules, utilityAccounts, meters, utilityBills } =
 		await import('../src/lib/server/db/schema');
@@ -260,6 +321,33 @@ async function main() {
 			})
 			.returning();
 		console.log('  ✅ 2 meters');
+
+		// Complex master meter (serves the plant district) with a building submeter under it.
+		const [plantMaster] = await db
+			.insert(meters)
+			.values({
+				complexId: plantComplexId,
+				accountId: elecAccount.id,
+				meterNumber: 'MTR-ELEC-MASTER',
+				utilityType: 'electricity',
+				unit: 'kwh',
+				status: 'active',
+				multiplier: '1',
+				location: 'Central plant switchgear'
+			})
+			.returning();
+		await db.insert(meters).values({
+			buildingId: buildingIds['Science Hall'],
+			parentMeterId: plantMaster.id,
+			isSubmeter: true,
+			meterNumber: 'MTR-ELEC-SUB-SCI',
+			utilityType: 'electricity',
+			unit: 'kwh',
+			status: 'active',
+			multiplier: '1',
+			location: 'Science Hall electrical closet'
+		});
+		console.log('  ✅ complex master meter + submeter');
 
 		// 12 months of bills per account with seasonal shape
 		const today = new Date();
@@ -408,6 +496,50 @@ async function main() {
 			}
 		}
 		console.log(`  ✅ ${readingCount} energy readings`);
+	}
+
+	// 7. Tasks
+	const { tasks } = await import('../src/lib/server/db/schema');
+	const existingTasks = await db.select().from(tasks).limit(1);
+	if (existingTasks.length > 0) {
+		console.log('  ⏭️  tasks already exist, skipping');
+	} else {
+		const admin = await db.query.user.findFirst({ where: eq(user.email, 'admin@demo.com') });
+		const sarah = await db.query.user.findFirst({ where: eq(user.email, 'sarah@energy.com') });
+		const projectRows = await db.select().from(projects);
+		const hvacProject = projectRows.find((p) => p.name.startsWith('HVAC'));
+
+		const soon = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+		await db.insert(tasks).values([
+			{
+				title: 'Review HVAC installation progress',
+				status: 'in_progress',
+				priority: 'high',
+				dueDate: soon,
+				assignedTo: sarah?.id ?? null,
+				projectId: hvacProject?.id ?? null,
+				clientId: clientIds['State University'],
+				createdBy: admin?.id ?? null
+			},
+			{
+				title: 'Prepare quarterly energy report',
+				status: 'todo',
+				priority: 'medium',
+				dueDate: soon,
+				assignedTo: sarah?.id ?? null,
+				clientId: clientIds['State University'],
+				createdBy: admin?.id ?? null
+			},
+			{
+				title: 'Verify July utility bill anomalies',
+				status: 'todo',
+				priority: 'urgent',
+				assignedTo: admin?.id ?? null,
+				clientId: clientIds['State University'],
+				createdBy: admin?.id ?? null
+			}
+		]);
+		console.log('  ✅ 3 tasks');
 	}
 
 	console.log('\n🎉 Seeding complete. Log in with admin@demo.com / admin123!');

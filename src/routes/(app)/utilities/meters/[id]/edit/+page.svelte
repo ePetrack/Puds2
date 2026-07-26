@@ -35,6 +35,8 @@
 			values={form?.values ?? data.values}
 			errors={form?.errors ?? {}}
 			buildingOptions={data.buildingOptions}
+			complexOptions={data.complexOptions}
+			parentMeterOptions={data.parentMeterOptions}
 			accountOptions={data.accountOptions}
 			submitLabel="Save Changes"
 			cancelHref="/utilities/meters"

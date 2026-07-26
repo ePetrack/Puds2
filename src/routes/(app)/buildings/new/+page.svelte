@@ -37,6 +37,8 @@
 			{values}
 			errors={form?.errors ?? {}}
 			clientOptions={data.clientOptions}
+			campusOptions={data.campusOptions}
+			complexOptions={data.complexOptions}
 			submitLabel="Create Building"
 			cancelHref="/buildings"
 			{submitting}

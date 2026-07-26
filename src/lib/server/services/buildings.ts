@@ -1,6 +1,6 @@
 import { and, count, desc, eq, ilike, type SQL } from 'drizzle-orm';
 import { db } from '../db';
-import { buildings, clients, type Building, type Client } from '../db/schema';
+import { buildings, clients, campuses, complexes, type Building, type Client } from '../db/schema';
 import { recordAudit, diffRecords } from './audit';
 import type { BuildingInput } from '$lib/schemas/building';
 import type { Paginated } from './clients';
@@ -10,13 +10,21 @@ export interface BuildingListParams {
 	perPage?: number;
 	search?: string;
 	clientId?: string;
+	campusId?: string;
+	complexId?: string;
 }
 
-export type BuildingWithClient = Building & { client: Pick<Client, 'id' | 'name'> | null };
+export type BuildingWithClient = Building & {
+	client: Pick<Client, 'id' | 'name'> | null;
+	campusName: string | null;
+	complexName: string | null;
+};
 
 function toRow(input: BuildingInput) {
 	return {
 		clientId: input.clientId,
+		campusId: input.campusId ?? null,
+		complexId: input.complexId ?? null,
 		name: input.name,
 		buildingType: input.buildingType ?? null,
 		squareFootage: input.squareFootage ?? null,
@@ -41,6 +49,12 @@ export async function listBuildings(
 	if (params.clientId) {
 		conditions.push(eq(buildings.clientId, params.clientId));
 	}
+	if (params.campusId) {
+		conditions.push(eq(buildings.campusId, params.campusId));
+	}
+	if (params.complexId) {
+		conditions.push(eq(buildings.complexId, params.complexId));
+	}
 	const where = conditions.length > 0 ? and(...conditions) : undefined;
 
 	const [rows, [{ value: total }]] = await Promise.all([
@@ -48,10 +62,14 @@ export async function listBuildings(
 			.select({
 				building: buildings,
 				clientId: clients.id,
-				clientName: clients.name
+				clientName: clients.name,
+				campusName: campuses.name,
+				complexName: complexes.name
 			})
 			.from(buildings)
 			.leftJoin(clients, eq(buildings.clientId, clients.id))
+			.leftJoin(campuses, eq(buildings.campusId, campuses.id))
+			.leftJoin(complexes, eq(buildings.complexId, complexes.id))
 			.where(where)
 			.orderBy(desc(buildings.createdAt))
 			.limit(perPage)
@@ -61,7 +79,9 @@ export async function listBuildings(
 
 	const items: BuildingWithClient[] = rows.map((r) => ({
 		...r.building,
-		client: r.clientId ? { id: r.clientId, name: r.clientName! } : null
+		client: r.clientId ? { id: r.clientId, name: r.clientName! } : null,
+		campusName: r.campusName,
+		complexName: r.complexName
 	}));
 
 	return { items, total, page, perPage, totalPages: Math.max(1, Math.ceil(total / perPage)) };
@@ -69,14 +89,24 @@ export async function listBuildings(
 
 export async function getBuilding(id: string): Promise<BuildingWithClient | undefined> {
 	const [row] = await db
-		.select({ building: buildings, clientId: clients.id, clientName: clients.name })
+		.select({
+			building: buildings,
+			clientId: clients.id,
+			clientName: clients.name,
+			campusName: campuses.name,
+			complexName: complexes.name
+		})
 		.from(buildings)
 		.leftJoin(clients, eq(buildings.clientId, clients.id))
+		.leftJoin(campuses, eq(buildings.campusId, campuses.id))
+		.leftJoin(complexes, eq(buildings.complexId, complexes.id))
 		.where(eq(buildings.id, id));
 	if (!row) return undefined;
 	return {
 		...row.building,
-		client: row.clientId ? { id: row.clientId, name: row.clientName! } : null
+		client: row.clientId ? { id: row.clientId, name: row.clientName! } : null,
+		campusName: row.campusName,
+		complexName: row.complexName
 	};
 }
 

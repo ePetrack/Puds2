@@ -22,6 +22,20 @@
       "when": 1784688852039,
       "tag": "0002_projects_energy",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784690834811,
+      "tag": "0003_documents_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784721785872,
+      "tag": "0004_physical_hierarchy",
+      "breakpoints": true
     }
   ]
 }
