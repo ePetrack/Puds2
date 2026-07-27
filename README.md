@@ -12,23 +12,20 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit together and
 
 ## Quick Start
 
-Prerequisites: **Node.js 20+**, **Docker** (for PostgreSQL), and **git**. Verify with
-`node -v` (should print v20 or newer) and `docker --version`.
+Prerequisites: **Node.js 20+**, **git**, and **PostgreSQL 16** — either via Docker or
+installed directly (see step 3). Verify Node with `node -v`.
 
 ```bash
 # 1. Get the code
 git clone https://github.com/ePetrack/Puds2.git
 cd Puds2
 
-# The newest work (M4 analytics/documents/tasks, M5 campuses/complexes/submeters)
-# lives on this branch until its PR merges. Skip if you only want the merged base.
-git checkout claude/utility-management-software-1qcj88
-
 # 2. Install dependencies
 npm install
 
-# 3. Start PostgreSQL (runs in the background; the DB is named puds_dev)
-docker compose up -d db
+# 3. Start PostgreSQL — pick ONE of the two options below (see "Database options")
+docker compose up -d db          # Option A: Docker
+# ...or Option B: a locally installed Postgres, no Docker required
 
 # 4. Configure environment
 cp .env.example .env
@@ -56,19 +53,65 @@ Then open **http://localhost:5173** and sign in with a seeded account:
 There is no public self-registration; users are provisioned by administrators
 (or the seed script).
 
-To stop the database when you're done: `docker compose down` (add `-v` to also
-delete the data volume and start fresh).
+### Database options
+
+PostgreSQL is the only thing Docker is used for — nothing else in the app needs it.
+
+**Option A — Docker** (matches CI):
+
+```bash
+docker compose up -d db
+```
+
+Stop it with `docker compose down` (add `-v` to delete the data volume and start fresh).
+Requires a running Docker *engine*, not just the CLI — on macOS that means Docker
+Desktop, Colima, or OrbStack.
+
+**Option B — Postgres installed directly** (no Docker):
+
+```bash
+# macOS (Homebrew). postgresql@16 is keg-only, so it is NOT on your PATH by default:
+brew install postgresql@16
+echo 'export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc                 # Intel Macs: /usr/local/opt/postgresql@16/bin
+brew services start postgresql@16
+
+# Create the role and database the default DATABASE_URL expects
+createuser -s puds
+psql postgres -c "ALTER USER puds WITH PASSWORD 'puds';"
+createdb -O puds puds_dev
+```
+
+Verify before continuing:
+
+```bash
+psql postgres://puds:puds@localhost:5432/puds_dev -c '\conninfo'
+```
+
+Either way the default `DATABASE_URL` in `.env.example` already matches, so no edits
+are needed.
 
 ### Troubleshooting
 
-- **`npm run db:migrate` fails to connect** — Postgres may still be starting. Check
-  `docker compose ps` (the `db` service should be `healthy`), then retry.
+- **`unknown shorthand flag: 'd' in -d`** — the Docker Compose plugin isn't installed, so
+  `docker` didn't recognize `compose` as a subcommand. Install Docker Desktop, or
+  `brew install docker-compose`, or use the hyphenated `docker-compose up -d db`. Option B
+  above avoids Docker entirely.
+- **`Cannot connect to the Docker daemon` / `/var/run/docker.sock: no such file`** — the
+  Docker CLI is installed but no engine is running. On macOS start Docker Desktop (or
+  `colima start`). Again, Option B avoids this.
+- **`command not found: psql` / `createdb`** after `brew install postgresql@16` — the
+  formula is keg-only; add its `bin` to your PATH (see Option B).
+- **`npm run db:migrate` fails to connect** — Postgres may still be starting. With Docker,
+  check `docker compose ps` (the `db` service should be `healthy`); with a local install,
+  `brew services list`. Then retry.
 - **Port 5432 already in use** — another Postgres is running locally. Stop it, or change
   the host port in `docker-compose.yml` (e.g. `'5433:5432'`) and update `DATABASE_URL`
   in `.env` to match.
 - **Login fails / "invalid session"** — make sure `AUTH_SECRET` in `.env` is set to a
   real value (step 4), not the `change-me…` placeholder, then restart `npm run dev`.
-- **Start over** — `docker compose down -v && docker compose up -d db && npm run db:migrate && npm run db:seed`.
+- **Start over (Docker)** — `docker compose down -v && docker compose up -d db && npm run db:migrate && npm run db:seed`.
+- **Start over (local Postgres)** — `dropdb puds_dev && createdb -O puds puds_dev && npm run db:migrate && npm run db:seed`.
 
 ## Scripts
 
