@@ -95,8 +95,10 @@ nullable `buildings.complex_id`, deliberately not a join table.
 **Complex ≠ District.** A Complex is the _physical_ grouping (the metering premise). A
 District is a _utility distribution network_ scoped by utility type — heating, cooling,
 electrical — which is what a central plant feeds. The axes are independent: a building is
-in one Complex and in several districts at once. Districts aren't built yet
-(`DISTRICT-1`); don't model them as a flavour of Complex.
+in one Complex and connected to several districts at once. District membership belongs on
+the **meter** (the connection point), not the building, and each connection is **primary**
+or **backup** — backup optional. Districts aren't built yet (`DISTRICT-1`); don't model
+them as a flavour of Complex, and don't hang them off buildings.
 
 Plants and distributed energy resources are **not modeled yet** — `/plants` is an explicit
 placeholder. It is decided that plants are **their own asset type** with their own

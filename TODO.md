@@ -200,22 +200,40 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 - **resolves an earlier concern:** `HIER-1` flagged that a single Complex would have to
   serve as both metering premise and district. With districts as their own entity that
   tension disappears, and the "one complex per building" rule stands unharmed.
-- **model sketch:** a `districts` table carrying a `utility_type` (reuse the existing
-  `utilityType` enum), scoped to a client and optionally a campus. Building membership is
-  many-to-many via a join table, since a building belongs to one district _per utility
-  type_.
-- **assumption to confirm:** a building has **at most one district per utility type** (one
-  heating district, not two) — enforceable as a unique constraint on
-  `(building_id, utility_type)`. Confirm before building.
+- **district membership attaches to the METER, not the building.** A meter is the physical
+  connection point to a distribution network, so that is where the link belongs. This
+  replaces an earlier building↔district join-table sketch, which was wrong.
+- **primary and backup:** a connection carries a role — **primary** or **backup**. Backup
+  is **optional**; many buildings have none. Redundancy is common in hospitals and federal
+  facilities that cannot lose heat, so a building may have a primary heating meter on
+  District A and a backup heating meter on District B.
+- **model sketch:**
+  - `districts` table: `utility_type` (reuse the existing `utilityType` enum), scoped to a
+    client and optionally a campus.
+  - `meters.district_id` — nullable FK; `meters.district_role` — enum
+    `primary` | `backup`, meaningful only when `district_id` is set.
+  - **validation:** a meter's `utility_type` must match its district's `utility_type` —
+    the same class of rule as the existing submeter check, so it belongs in
+    `assertValidMeter` in `src/lib/server/services/meters.ts` alongside the parent-meter
+    and premise rules.
+  - Because a meter already carries exactly one `utility_type`, the earlier
+    "one district per utility type" constraint is expressed naturally and needs no join
+    table or composite unique index.
+- **still open (minor, decide during build):** should a building be limited to one primary
+  and one backup per utility type, or is that left to convention? And must a backup be a
+  _different_ district from the primary? Both are cheap to enforce if wanted.
 - **relationship to `PLANTS-1`:** a district is the distribution network a plant feeds —
-  **Plant → District → Buildings**. Worth designing the two together so the plant's output
-  connects to the district it serves rather than bolting the link on afterwards.
+  **Plant → District → Meters → Buildings**. Worth designing the two together so the
+  plant's output connects to the district it serves rather than bolting the link on
+  afterwards.
 - **acceptance:**
-  - [ ] cardinality assumption confirmed
-  - [ ] `districts` table + join table + migration, with the per-utility-type constraint
+  - [ ] `districts` table + migration; `meters.district_id` + `district_role`
+  - [ ] utility-type match enforced in `assertValidMeter`, with a typed field error
   - [ ] service with audit logging + CRUD, matching the M5 pattern
-  - [ ] building detail shows its districts; district detail lists member buildings
-  - [ ] unit tests for the per-utility-type constraint; e2e journey
+  - [ ] meter form exposes district + role; district detail lists connected meters and
+        their buildings, primary and backup distinguished
+  - [ ] unit tests: type mismatch rejected, backup optional, a building with primary-only
+        and one with primary + backup
   - [ ] Complex vs. District distinction documented in `ARCHITECTURE.md`
 
 ### UI-1 — Visual pass against the Figma comp

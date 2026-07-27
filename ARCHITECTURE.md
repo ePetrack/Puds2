@@ -85,8 +85,12 @@ Client
   central plant feeds. Because the axes are independent, a building sits in one Complex and
   simultaneously in a heating, cooling and electrical district; steam, chilled-water and
   electrical primary loops each serve a different, often overlapping, set of buildings.
-  Districts are not yet built — tracked as `DISTRICT-1`, and worth designing alongside
-  `PLANTS-1` since the chain is **Plant → District → Buildings**.
+  District membership attaches to the **meter**, not the building — a meter is the physical
+  connection point to a network — and each connection is either **primary** or **backup**,
+  with backup optional. A hospital wing might sit on a primary heating district and a
+  backup one; most buildings have only a primary. Districts are not yet built — tracked as
+  `DISTRICT-1`, and worth designing alongside `PLANTS-1` since the chain is
+  **Plant → District → Meters → Buildings**.
 - **Plants are their own asset type**, not a `building_type`, a complex flag, or a variant
   of `meters`. Generation and production assets get a dedicated table with their own
   production data, because they don't fit the consumption-meter model: flow is
