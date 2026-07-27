@@ -89,6 +89,11 @@ Campus and Complex are both optional. A meter's premise is a building **XOR** a 
 buildings. Submeters reference a parent meter and must share its utility type. See
 `ARCHITECTURE.md` for the full picture.
 
+A building belongs to **at most one complex**, and membership is optional — a single
+nullable `buildings.complex_id`, deliberately not a join table.
+
 Plants and distributed energy resources are **not modeled yet** — `/plants` is an explicit
-placeholder. Don't force generation assets into the consumption-meter schema; see
-`PLANTS-1` in `TODO.md` for the open questions.
+placeholder. It is decided that plants are **their own asset type** with their own
+production data, so don't add them as a `building_type`, a complex flag, or a variant of
+`meters`. See `PLANTS-1` in `TODO.md` — one question (what a plant attaches to) is still
+open.
