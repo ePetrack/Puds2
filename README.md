@@ -64,7 +64,7 @@ docker compose up -d db
 ```
 
 Stop it with `docker compose down` (add `-v` to delete the data volume and start fresh).
-Requires a running Docker *engine*, not just the CLI — on macOS that means Docker
+Requires a running Docker _engine_, not just the CLI — on macOS that means Docker
 Desktop, Colima, or OrbStack.
 
 **Option B — Postgres installed directly** (no Docker):
