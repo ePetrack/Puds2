@@ -7,8 +7,9 @@ upcoming milestones.
 **Stack:** SvelteKit (Svelte 5) full-stack · PostgreSQL 16 · Drizzle ORM · better-auth ·
 Tailwind CSS · Vitest · Playwright · GitHub Actions
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit together and
-[docs/adr](./docs/adr) for the reasoning behind the stack.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit together,
+[docs/adr](./docs/adr) for the reasoning behind the stack, [TODO.md](./TODO.md) for what's
+next, and [CLAUDE.md](./CLAUDE.md) for working conventions and known gotchas.
 
 ## Quick Start
 
@@ -169,7 +170,11 @@ See [.env.example](./.env.example). Required: `DATABASE_URL`, `AUTH_SECRET`, `OR
 - **M5 — Physical hierarchy** ✅ campuses and complexes under clients, building
   parentage, complex master meters, and parent/child submeters with type & cycle
   validation
+- **Navigation rework** ✅ task-oriented sidebar (Home · Bills · Utility Accounts · Plants ·
+  Facilities), a `/facilities` hub over the hierarchy, and a `/plants` placeholder
 - **M6 — Hardening**: rate limiting, metrics, backup/restore, deployment guide
+
+Open work — including known issues — is tracked in [TODO.md](./TODO.md).
 
 ## License
 
