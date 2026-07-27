@@ -40,6 +40,7 @@
 			label: 'Insights & Work',
 			items: [
 				{ name: 'Clients', href: '/clients', icon: '🏢' },
+				{ name: 'Connections', href: '/connections', icon: '🔌' },
 				{ name: 'Energy Data', href: '/energy', icon: '⚡' },
 				{ name: 'Analysis', href: '/analysis', icon: '📈' },
 				{ name: 'Projects', href: '/projects', icon: '📋' },

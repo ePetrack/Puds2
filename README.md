@@ -172,6 +172,12 @@ See [.env.example](./.env.example). Required: `DATABASE_URL`, `AUTH_SECRET`, `OR
   validation
 - **Navigation rework** ✅ task-oriented sidebar (Home · Bills · Utility Accounts · Plants ·
   Facilities), a `/facilities` hub over the hierarchy, and a `/plants` placeholder
+- **Connections & cost allocation** ✅ a `/connections` review of how buildings, meters and
+  utility accounts wire together — with a gaps panel for unattributed meters and accounts
+  with no meters — plus splitting a master bill across the buildings it serves by
+  submetered usage, area, occupancy, equal share, fixed percentage or hybrid. Energy,
+  demand and fixed charges are allocated separately, the unmetered remainder is shown as
+  its own common-area line, and each run is saved with its inputs for audit.
 - **M6 — Hardening**: rate limiting, metrics, backup/restore, deployment guide
 
 Open work — including known issues — is tracked in [TODO.md](./TODO.md).

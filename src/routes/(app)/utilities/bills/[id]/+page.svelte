@@ -2,11 +2,14 @@
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import Modal from '$lib/components/ui/Modal.svelte';
+	import BillAllocation from '$lib/components/utilities/BillAllocation.svelte';
 	import { toast } from '$lib/stores/toast';
 	import { formatEnumLabel } from '$lib/schemas/utility';
 	import { formatCurrency, formatNumber, formatDateShort } from '$lib/utils/format';
 
-	let { data } = $props();
+	let { data, form } = $props();
+
+	let canWrite = $derived(data.user.role === 'admin' || data.user.role === 'consultant');
 
 	let deleteModalOpen = $state(false);
 	let updatingStatus = $state(false);
@@ -148,6 +151,17 @@
 					</div>
 				</dl>
 			</div>
+
+			<BillAllocation
+				billId={data.bill.id}
+				unit={data.bill.unit}
+				{canWrite}
+				context={data.allocationContext}
+				saved={data.allocation}
+				preview={form?.allocationPreview}
+				errors={form?.allocationErrors}
+				defaultNotes={form?.allocationNotes ?? ''}
+			/>
 
 			<div class="card p-6">
 				<h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">

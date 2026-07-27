@@ -367,6 +367,71 @@ export const utilityBills = pgTable(
 	]
 );
 
+// ---------------------------------------------------------------------------
+// Bill allocation — splitting a master bill across buildings.
+//
+// ISO 50001 and CRE practice require the split to be reproducible, so the run
+// records its inputs (`basis` jsonb) as they were at the time. Re-running later,
+// after a building's square footage changes, must not silently rewrite history.
+// Charge components are allocated separately: energy, demand and fixed costs move
+// independently and warrant different bases.
+// ---------------------------------------------------------------------------
+
+export const allocationMethod = pgEnum('allocation_method', [
+	'submetered',
+	'area',
+	'occupancy',
+	'equal',
+	'fixed_percentage',
+	'hybrid'
+]);
+
+export const billAllocations = pgTable(
+	'bill_allocations',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		billId: uuid('bill_id')
+			.notNull()
+			.references(() => utilityBills.id, { onDelete: 'cascade' }),
+		method: allocationMethod('method').notNull(),
+		// Snapshot of the inputs used, so the calculation stays reproducible.
+		basis: jsonb('basis'),
+		// Non-blocking warnings, e.g. bill period not aligned to submeter reads.
+		warnings: jsonb('warnings'),
+		notes: text('notes'),
+		createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [index('bill_allocations_bill_id_idx').on(t.billId)]
+);
+
+export const billAllocationLines = pgTable(
+	'bill_allocation_lines',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		allocationId: uuid('allocation_id')
+			.notNull()
+			.references(() => billAllocations.id, { onDelete: 'cascade' }),
+		// Null building = the unallocated remainder (common area / house load).
+		buildingId: uuid('building_id').references(() => buildings.id, { onDelete: 'set null' }),
+		label: text('label').notNull(),
+		basisValue: numeric('basis_value', { precision: 16, scale: 4 }),
+		sharePct: numeric('share_pct', { precision: 9, scale: 6 }).notNull(),
+		usage: numeric('usage', { precision: 14, scale: 3 }),
+		demandKw: numeric('demand_kw', { precision: 12, scale: 3 }),
+		energyCost: numeric('energy_cost', { precision: 12, scale: 2 }),
+		demandCost: numeric('demand_cost', { precision: 12, scale: 2 }),
+		fixedCost: numeric('fixed_cost', { precision: 12, scale: 2 }),
+		totalCost: numeric('total_cost', { precision: 12, scale: 2 }).notNull(),
+		isRemainder: boolean('is_remainder').notNull().default(false)
+	},
+	(t) => [index('bill_allocation_lines_allocation_id_idx').on(t.allocationId)]
+);
+
+export type BillAllocation = typeof billAllocations.$inferSelect;
+export type BillAllocationLine = typeof billAllocationLines.$inferSelect;
+
 export type UtilityProvider = typeof utilityProviders.$inferSelect;
 export type RateSchedule = typeof rateSchedules.$inferSelect;
 export type UtilityAccount = typeof utilityAccounts.$inferSelect;

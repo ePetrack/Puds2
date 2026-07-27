@@ -24,17 +24,19 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 
 ## Shipped
 
-| Milestone                 | What landed                                                                                                         | PR  |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- | --- |
-| M1 Foundation             | Postgres + Drizzle migrations, better-auth + RBAC, audit logging, clients & buildings CRUD, Vitest + Playwright, CI | #1  |
-| M2 Utility management     | Providers, accounts, meters, rate schedules, bills with anomaly detection, CSV import, spend dashboard              | #2  |
-| M3 Projects & energy data | Projects with budgets/savings and building scope, meter readings, monthly trends, CSV import                        | #2  |
-| M4 Analytics & documents  | Perspective.js analysis, document storage with streaming downloads, task tracking                                   | #3  |
-| M5 Physical hierarchy     | Campuses, complexes, building parentage, complex master meters, parent/child submeters with type + cycle validation | #3  |
-| Setup docs                | Postgres without Docker, troubleshooting for Compose/daemon/keg-only `psql`                                         | #4  |
-| Navigation rework         | Task-oriented sidebar, `/facilities` hub, `/plants` placeholder, 13 nav e2e tests                                   | #5  |
+| Milestone                 | What landed                                                                                                                        | PR  |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --- |
+| M1 Foundation             | Postgres + Drizzle migrations, better-auth + RBAC, audit logging, clients & buildings CRUD, Vitest + Playwright, CI                | #1  |
+| M2 Utility management     | Providers, accounts, meters, rate schedules, bills with anomaly detection, CSV import, spend dashboard                             | #2  |
+| M3 Projects & energy data | Projects with budgets/savings and building scope, meter readings, monthly trends, CSV import                                       | #2  |
+| M4 Analytics & documents  | Perspective.js analysis, document storage with streaming downloads, task tracking                                                  | #3  |
+| M5 Physical hierarchy     | Campuses, complexes, building parentage, complex master meters, parent/child submeters with type + cycle validation                | #3  |
+| Setup docs                | Postgres without Docker, troubleshooting for Compose/daemon/keg-only `psql`                                                        | #4  |
+| Navigation rework         | Task-oriented sidebar, `/facilities` hub, `/plants` placeholder, 13 nav e2e tests                                                  | #5  |
+| Docs & backlog            | `TODO.md`, `CLAUDE.md`, ARCHITECTURE decisions (complex cardinality, plants, Complex ≠ District)                                   | #6  |
+| Connections & allocation  | `/connections` relationship review with a gaps panel; per-component bill allocation with preview, remainder line and persisted run | #8  |
 
-**Current gate:** lint + typecheck clean · 70 Vitest · 33 Playwright.
+**Current gate:** lint + typecheck clean · 100 Vitest · 40 Playwright.
 
 ---
 
@@ -92,6 +94,10 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 - **why:** `meters.parent_meter_id` now exists, so a complex master meter can be compared
   against the sum of its submeters for the same period — surfacing unaccounted energy and
   line loss. Standard M&V work that consultants bill for; newly possible and not yet built.
+- **reuse:** the master-minus-submeters arithmetic already exists in
+  `src/lib/server/services/bill-allocation-math.ts`, which computes the shortfall as an
+  explicit remainder line. Lift that rather than writing a second implementation; this item
+  is the per-period _view_ over it.
 - **acceptance:**
   - [ ] per-period view: master total, sum of submeters, delta, delta %
   - [ ] handles partial coverage (not every load submetered) without implying error
@@ -219,13 +225,24 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   - Because a meter already carries exactly one `utility_type`, the earlier
     "one district per utility type" constraint is expressed naturally and needs no join
     table or composite unique index.
-- **still open (minor, decide during build):** should a building be limited to one primary
-  and one backup per utility type, or is that left to convention? And must a backup be a
-  _different_ district from the primary? Both are cheap to enforce if wanted.
-- **relationship to `PLANTS-1`:** a district is the distribution network a plant feeds —
-  **Plant → District → Meters → Buildings**. Worth designing the two together so the
-  plant's output connects to the district it serves rather than bolting the link on
-  afterwards.
+- **what a district physically is, by utility type** — it varies, and this is the useful
+  definition to hold onto:
+  - **Electricity** — the microgrid **substation**.
+  - **Chilled water / steam** — the larger distribution line (the **trunk line**) upstream
+    of the building's feed.
+- **do NOT enforce these — they are conventions, not constraints:**
+  - A building is **not capped** at one primary + one backup per utility type. No unique
+    index on `(building_id, utility_type, role)`; multiple connections are legitimate.
+  - A backup will _likely_ always be a different district from the primary, but that is
+    expected practice rather than a rule. Don't reject same-district backups.
+
+  The only hard validation is the meter/district **utility-type match**.
+
+- **relationship to `PLANTS-1` — many-to-many.** A plant can feed **multiple districts**,
+  and a district can be fed by **multiple plants** (redundancy, peaking). So the plant↔
+  district link is a join table, not an FK on either side. The chain is
+  **Plants ⇄ Districts → Meters → Buildings**. Design the two together so this lands as a
+  join table from the start rather than a one-to-many that has to be migrated later.
 - **acceptance:**
   - [ ] `districts` table + migration; `meters.district_id` + `district_role`
   - [ ] utility-type match enforced in `assertValidMeter`, with a typed field error
@@ -235,6 +252,52 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   - [ ] unit tests: type mismatch rejected, backup optional, a building with primary-only
         and one with primary + backup
   - [ ] Complex vs. District distinction documented in `ARCHITECTURE.md`
+
+### METER-1 — Record meter ownership instead of deriving it
+
+- **status:** todo
+- **priority:** P2
+- **effort:** S
+- **blocked_by:** none
+- **files:** `src/lib/server/db/schema.ts`, `src/lib/schemas/utility.ts`,
+  `src/routes/(app)/utilities/meters/`, `src/routes/(app)/connections/+page.server.ts`
+- **why:** `/connections` splits meters into utility-owned and internally-owned, but
+  `meters` has **no ownership column**. The page derives it from `account_id` — a meter
+  billed under a utility account is treated as the utility's revenue meter, one without as
+  the client's own. That heuristic is right most of the time and wrong in two real cases: a
+  client-owned meter the utility happens to bill against, and a utility meter not yet
+  linked to an account. The page says on screen that the split is derived; that is a
+  disclosure, not a fix.
+- **approach:** a `meter_ownership` pgEnum (`utility` | `client` | `unknown`) with a
+  `meters.ownership` column defaulting to `unknown`; backfill from `account_id` in the
+  migration to preserve what the current UI shows. Then `/connections` groups on the column
+  and drops the derivation notice.
+- **acceptance:**
+  - [ ] `meters.ownership` column + migration with an `account_id`-based backfill
+  - [ ] meter create/edit form exposes it
+  - [ ] `/connections` groups on the column; the "derived, not recorded" banner is removed
+  - [ ] unit test covering a client-owned meter that still bills to a utility account
+
+### ALLOC-1 — Weather-normalised and EnPI-based allocation
+
+- **status:** todo
+- **priority:** P3
+- **effort:** M
+- **blocked_by:** none
+- **files:** `src/lib/server/services/bill-allocation-math.ts`,
+  `src/lib/server/services/bill-allocation.ts`
+- **why:** The shipped methods split on a static or measured basis — submetered usage,
+  area, occupancy, equal, fixed percentage, hybrid. They do not adjust for the fact that
+  buildings in one complex have different weather sensitivity, so on an extreme month an
+  area split over-charges a well-insulated building. A refinement, not a defect: IPMVP
+  routine adjustments (HDD/CDD regression, or change-point models per building) would let
+  the basis itself be weather-normalised.
+- **note:** only worth building once `ANALYTICS-2` exists — a normalised split needs the
+  same per-building regression that reconciliation does.
+- **acceptance:**
+  - [ ] a method that normalises the basis against degree days for the bill period
+  - [ ] the persisted `basis` snapshot records the weather source and model fit
+  - [ ] falls back to the un-normalised basis, with a warning, when data is insufficient
 
 ### UI-1 — Visual pass against the Figma comp
 

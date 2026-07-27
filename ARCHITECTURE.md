@@ -41,6 +41,13 @@ Two areas are hubs rather than entities of their own:
   storage, CHP, water resources) need a data model distinct from consumption meters, so
   the nav slot exists while the schema is designed separately.
 
+**`/connections`** (under "Insights & Work") is a read-only review of how buildings, meters
+and utility accounts wire together. It composes existing list services — no service or table
+of its own — grouping meters by premise into utility-owned and internally-owned columns, and
+leading with a **Gaps** panel: meters with neither an account nor a parent, accounts with no
+meters, and submeters sitting outside their parent's premise. Ownership is **derived** from
+`meters.account_id`, which the page states on screen; an explicit column is `METER-1`.
+
 Because `/utilities/bills` and `/utilities/accounts` are siblings, a plain prefix match
 would highlight both. A `sectionRoutes` map declares which paths each nav item owns —
 Facility Management owns `/campuses`, `/complexes`, `/buildings` and `/utilities/meters` —
@@ -85,9 +92,15 @@ Client
   central plant feeds. Because the axes are independent, a building sits in one Complex and
   simultaneously in a heating, cooling and electrical district; steam, chilled-water and
   electrical primary loops each serve a different, often overlapping, set of buildings.
-  District membership attaches to the **meter**, not the building — a meter is the physical
-  connection point to a network — and each connection is either **primary** or **backup**,
-  with backup optional. A hospital wing might sit on a primary heating district and a
+  What a district physically _is_ varies by utility type: for **electricity** it is the
+  microgrid **substation**; for **chilled water and steam** it is the larger distribution
+  line (the **trunk line**) upstream of the building's feed. District membership attaches
+  to the **meter**, not the building — a meter is the physical connection point to a
+  network — and each connection is either **primary** or **backup**, with backup optional.
+  Connections are deliberately **not** capped per utility type and a backup is **not**
+  required to be a different district from the primary: both are conventions, so no unique
+  index and no rejection. A plant can feed several districts and a district can be fed by
+  several plants, so that link is many-to-many. A hospital wing might sit on a primary heating district and a
   backup one; most buildings have only a primary. Districts are not yet built — tracked as
   `DISTRICT-1`, and worth designing alongside `PLANTS-1` since the chain is
   **Plant → District → Meters → Buildings**.
@@ -96,6 +109,34 @@ Client
   production data, because they don't fit the consumption-meter model: flow is
   bidirectional, capacity is rated, and fuel input is measured against output. Tracked as
   `PLANTS-1`; `/plants` is an explicit placeholder until then.
+
+## Cost allocation (splitting a master bill)
+
+A bill on a complex master meter covers several buildings and has to be split defensibly.
+The calculator (`src/lib/server/services/bill-allocation-math.ts`) is pure and DB-free;
+persistence lives beside it in `bill-allocation.ts`. Three rules come straight from ISO
+50001 and commercial-real-estate practice, and each one shaped the schema:
+
+- **Charge components are allocated separately.** Energy (kWh), demand (kW) and fixed cost
+  move independently — a premise with modest consumption but a coincident peak drives the
+  demand charge — so `bill_allocation_lines` stores `usage`, `demand_kw`, `energy_cost`,
+  `demand_cost` and `fixed_cost` as their own columns rather than one blended percentage.
+- **The parts sum exactly to the invoice.** Proportional splits produce fractions of a cent;
+  the residue is reconciled onto the largest line, for the percentage column too. An
+  allocation that doesn't reconcile against the bill fails an audit.
+- **The run is persisted, not just the result.** `bill_allocations.basis` snapshots the
+  inputs as they were, so re-reading an allocation after a building's square footage changes
+  shows what was actually assumed. `warnings` and `notes` (static factors) ride along.
+
+Methods: `submetered` · `area` · `occupancy` · `equal` · `fixed_percentage` · `hybrid`. For
+the submetered methods the master total is compared against the sum of the submeters and the
+shortfall becomes an **explicit remainder line** (`is_remainder`, no `building_id`) labelled
+as common area — never silently absorbed into the metered premises. Missing basis data is a
+typed `AllocationError` surfaced as a field error, not a silent zero share, and readings that
+fall outside the billing period raise a warning instead of being averaged away.
+
+Saving replaces any prior allocation for the bill and writes `audit_log` in the same
+transaction. The UI previews the computed table before anything is written.
 
 ## Authentication & authorization
 
