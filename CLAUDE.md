@@ -92,6 +92,12 @@ buildings. Submeters reference a parent meter and must share its utility type. S
 A building belongs to **at most one complex**, and membership is optional — a single
 nullable `buildings.complex_id`, deliberately not a join table.
 
+**Complex ≠ District.** A Complex is the _physical_ grouping (the metering premise). A
+District is a _utility distribution network_ scoped by utility type — heating, cooling,
+electrical — which is what a central plant feeds. The axes are independent: a building is
+in one Complex and in several districts at once. Districts aren't built yet
+(`DISTRICT-1`); don't model them as a flavour of Complex.
+
 Plants and distributed energy resources are **not modeled yet** — `/plants` is an explicit
 placeholder. It is decided that plants are **their own asset type** with their own
 production data, so don't add them as a `building_type`, a complex flag, or a variant of

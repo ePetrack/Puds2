@@ -77,10 +77,16 @@ Client
 
 - **A building belongs to at most one complex, and membership is optional.** This is what
   `buildings.complex_id` already expresses (nullable single FK) — deliberately _not_ a join
-  table. The consequence, accepted knowingly: a single Complex has to serve as both the
-  metering premise and the maintenance-district grouping, so a building cannot belong to a
-  metering complex and a separate responsibility area simultaneously. A `complex_type`
-  enum will record which role a given Complex plays (`HIER-1` in `TODO.md`).
+  table.
+- **Complex and District are separate axes and must not be conflated.** A **Complex** is
+  the _physical_ hierarchy: buildings grouped by physical arrangement, forming the metering
+  premise. A **District** is a _utility distribution network_ scoped by utility type — a
+  heating district, a cooling district, an electrical district — i.e. the service network a
+  central plant feeds. Because the axes are independent, a building sits in one Complex and
+  simultaneously in a heating, cooling and electrical district; steam, chilled-water and
+  electrical primary loops each serve a different, often overlapping, set of buildings.
+  Districts are not yet built — tracked as `DISTRICT-1`, and worth designing alongside
+  `PLANTS-1` since the chain is **Plant → District → Buildings**.
 - **Plants are their own asset type**, not a `building_type`, a complex flag, or a variant
   of `meters`. Generation and production assets get a dedicated table with their own
   production data, because they don't fit the consumption-meter model: flow is

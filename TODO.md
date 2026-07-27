@@ -168,35 +168,55 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   - [ ] `/plants` placeholder replaced; seed gains a demo plant
   - [ ] unit + e2e coverage
 
-### HIER-1 — Complexes as maintenance districts / responsibility areas
+### HIER-1 — ~~Complexes as maintenance districts~~ (superseded by `DISTRICT-1`)
+
+- **status:** done — closed as **superseded**, not built
+- **priority:** —
+- **why superseded:** this item assumed a Complex could _also_ be a maintenance district,
+  handled via a `complex_type` enum. That premise is wrong. Complex and District are
+  **separate concepts on separate axes** — see `DISTRICT-1`. No `complex_type` enum; a
+  Complex is purely physical. Kept for ID stability; do not implement.
+
+### DISTRICT-1 — Districts as utility distribution networks
 
 - **status:** todo
-- **priority:** P3 — **deliberately on the back burner.** The cardinality question is
-  settled and the current schema already satisfies it, so nothing is broken or blocking.
-  The `complex_type` enum is a refinement to pick up later; don't start it unprompted.
-- **effort:** S — reduced by the cardinality decision below
-- **blocked_by:** none
-- **files:** `src/lib/server/db/schema.ts`, `src/lib/server/services/complexes.ts`
-- **why:** Explicitly flagged when the hierarchy was requested: _"Further development of
-  campus into 'complexes' that corresponds to maintenance districts, responsibility areas,
-  etc., needs to be completed."_ Today a Complex is only a metering premise (buildings
-  sharing one master meter).
-- **decided:** a building belongs to **at most one complex**, and complex membership stays
-  **optional**. That is exactly the current schema (`buildings.complex_id`, nullable single
-  FK) — so no join table, and no cardinality change is needed.
-- **consequence to accept:** because membership is single, one Complex must serve as _both_
-  the metering premise and the maintenance-district grouping. A building cannot sit in a
-  "Central Plant" metering complex and a separate "North District" at the same time. If
-  that turns out to be needed in practice, it reopens as a new item rather than changing
-  this decision quietly.
-- **remaining work:** add a `complex_type` enum (e.g. `metering_premise` /
-  `maintenance_district` / `responsibility_area`) so a Complex records which role it plays,
-  and surface it in the complex list/detail and form.
+- **priority:** P2
+- **effort:** M
+- **blocked_by:** none — but see the relationship to `PLANTS-1` below
+- **files:** `src/lib/server/db/schema.ts`, new `src/lib/server/services/districts.ts`,
+  new routes under `src/routes/(app)/districts/`
+- **why:** Complex and District are different axes and must not be conflated:
+  - **Complex = physical hierarchy.** Buildings grouped by physical arrangement — the
+    metering premise. A building belongs to **at most one**, optionally.
+  - **District = utility distribution network**, scoped by utility type: a heating
+    district, a cooling district, an electrical district. These are the service networks
+    a central plant feeds.
+
+  The axes are independent, so a building sits in one Complex _and_ simultaneously in a
+  heating district, a cooling district, and an electrical district. Steam, chilled water,
+  and electrical primary loops each serve a different (often overlapping) set of buildings
+  — which is exactly why one grouping can't express both.
+
+- **resolves an earlier concern:** `HIER-1` flagged that a single Complex would have to
+  serve as both metering premise and district. With districts as their own entity that
+  tension disappears, and the "one complex per building" rule stands unharmed.
+- **model sketch:** a `districts` table carrying a `utility_type` (reuse the existing
+  `utilityType` enum), scoped to a client and optionally a campus. Building membership is
+  many-to-many via a join table, since a building belongs to one district _per utility
+  type_.
+- **assumption to confirm:** a building has **at most one district per utility type** (one
+  heating district, not two) — enforceable as a unique constraint on
+  `(building_id, utility_type)`. Confirm before building.
+- **relationship to `PLANTS-1`:** a district is the distribution network a plant feeds —
+  **Plant → District → Buildings**. Worth designing the two together so the plant's output
+  connects to the district it serves rather than bolting the link on afterwards.
 - **acceptance:**
-  - [ ] `complex_type` enum + migration, defaulting existing rows to `metering_premise`
-  - [ ] Zod schema, service, and `ComplexForm` expose it
-  - [ ] complex list shows the type; `/facilities` copy reflects it
-  - [ ] decision + consequence recorded in `ARCHITECTURE.md`
+  - [ ] cardinality assumption confirmed
+  - [ ] `districts` table + join table + migration, with the per-utility-type constraint
+  - [ ] service with audit logging + CRUD, matching the M5 pattern
+  - [ ] building detail shows its districts; district detail lists member buildings
+  - [ ] unit tests for the per-utility-type constraint; e2e journey
+  - [ ] Complex vs. District distinction documented in `ARCHITECTURE.md`
 
 ### UI-1 — Visual pass against the Figma comp
 
