@@ -72,9 +72,20 @@ Client
   type and rejects self-references and cycles; `is_submeter` is derived from the parent
   link. Energy readings and utility bills reference `meter_id`, so a complex master
   meter carries its own readings and bills with no extra tables.
-- **Future:** plants and distributed energy & water resources (DER) are a planned
-  additional premise/asset type alongside Building and Complex — the nullable-premise
-  and master/submeter model already leaves room for them.
+
+### Decisions
+
+- **A building belongs to at most one complex, and membership is optional.** This is what
+  `buildings.complex_id` already expresses (nullable single FK) — deliberately _not_ a join
+  table. The consequence, accepted knowingly: a single Complex has to serve as both the
+  metering premise and the maintenance-district grouping, so a building cannot belong to a
+  metering complex and a separate responsibility area simultaneously. A `complex_type`
+  enum will record which role a given Complex plays (`HIER-1` in `TODO.md`).
+- **Plants are their own asset type**, not a `building_type`, a complex flag, or a variant
+  of `meters`. Generation and production assets get a dedicated table with their own
+  production data, because they don't fit the consumption-meter model: flow is
+  bidirectional, capacity is rated, and fuel input is measured against output. Tracked as
+  `PLANTS-1`; `/plants` is an explicit placeholder until then.
 
 ## Authentication & authorization
 

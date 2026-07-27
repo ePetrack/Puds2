@@ -102,19 +102,22 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 - **status:** todo
 - **priority:** P2
 - **effort:** L
-- **blocked_by:** none — but needs a product decision first
+- **blocked_by:** none — one attachment question outstanding, see below
 - **files:** `src/lib/server/db/schema.ts`, `src/routes/(app)/plants/+page.svelte`
 - **why:** "Plant management" is one of the five primary nav areas but has no data behind
   it — `/plants` is an explicit placeholder. Generation assets don't fit the consumption
   meter schema: bidirectional flow, capacity ratings, and fuel input measured against
   output. Central plants, solar PV, storage, CHP, and water resources are all in scope.
-- **open questions (ask before building):**
-  - Is a plant a new entity, or a `building_type` / complex flag?
-  - Does a plant attach to a campus, a complex, both, or stand alone?
-  - Do plants get meters, or a separate production-reading table?
+- **decided:** plants are **their own asset type** — a dedicated `plants` table with its own
+  production data, _not_ a `building_type`, a complex flag, or a variant of `meters`. Don't
+  reuse the consumption-meter schema for generation.
+- **still open:** what a plant attaches to — client directly, campus, complex, or building
+  (a rooftop array sits on a building; a central utility plant sits on a campus). Likely a
+  nullable optional-parent set mirroring how buildings attach today.
 - **acceptance:**
-  - [ ] questions above answered and recorded in `ARCHITECTURE.md`
-  - [ ] migration + service with audit logging + CRUD, matching the M5 pattern
+  - [ ] attachment question answered and recorded in `ARCHITECTURE.md`
+  - [ ] `plants` table + migration; production readings separate from `energy_readings`
+  - [ ] service with audit logging + CRUD, matching the M5 pattern
   - [ ] `/plants` placeholder replaced; seed gains a demo plant
   - [ ] unit + e2e coverage
 
@@ -122,20 +125,29 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 
 - **status:** todo
 - **priority:** P2
-- **effort:** M
-- **blocked_by:** none — needs a modeling decision first
+- **effort:** S — reduced by the cardinality decision below
+- **blocked_by:** none
 - **files:** `src/lib/server/db/schema.ts`, `src/lib/server/services/complexes.ts`
 - **why:** Explicitly flagged when the hierarchy was requested: _"Further development of
   campus into 'complexes' that corresponds to maintenance districts, responsibility areas,
   etc., needs to be completed."_ Today a Complex is only a metering premise (buildings
   sharing one master meter).
-- **open question:** add a `complex_type` enum (metering premise / maintenance district /
-  responsibility area), or allow a building to belong to several complexes for different
-  purposes? The second is a bigger schema change (join table) but models reality better.
+- **decided:** a building belongs to **at most one complex**, and complex membership stays
+  **optional**. That is exactly the current schema (`buildings.complex_id`, nullable single
+  FK) — so no join table, and no cardinality change is needed.
+- **consequence to accept:** because membership is single, one Complex must serve as _both_
+  the metering premise and the maintenance-district grouping. A building cannot sit in a
+  "Central Plant" metering complex and a separate "North District" at the same time. If
+  that turns out to be needed in practice, it reopens as a new item rather than changing
+  this decision quietly.
+- **remaining work:** add a `complex_type` enum (e.g. `metering_premise` /
+  `maintenance_district` / `responsibility_area`) so a Complex records which role it plays,
+  and surface it in the complex list/detail and form.
 - **acceptance:**
-  - [ ] decision recorded in `ARCHITECTURE.md`
-  - [ ] schema + migration + service validation
-  - [ ] complex list/detail expose the new dimension
+  - [ ] `complex_type` enum + migration, defaulting existing rows to `metering_premise`
+  - [ ] Zod schema, service, and `ComplexForm` expose it
+  - [ ] complex list shows the type; `/facilities` copy reflects it
+  - [ ] decision + consequence recorded in `ARCHITECTURE.md`
 
 ### UI-1 — Visual pass against the Figma comp
 
