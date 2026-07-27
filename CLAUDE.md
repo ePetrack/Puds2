@@ -95,13 +95,30 @@ nullable `buildings.complex_id`, deliberately not a join table.
 **Complex ≠ District.** A Complex is the _physical_ grouping (the metering premise). A
 District is a _utility distribution network_ scoped by utility type — heating, cooling,
 electrical — which is what a central plant feeds. The axes are independent: a building is
-in one Complex and connected to several districts at once. District membership belongs on
-the **meter** (the connection point), not the building, and each connection is **primary**
-or **backup** — backup optional. Districts aren't built yet (`DISTRICT-1`); don't model
-them as a flavour of Complex, and don't hang them off buildings.
+in one Complex and connected to several districts at once. Physically a district is the
+**substation** for electricity, and the **trunk line** upstream of the building's feed for
+chilled water and steam. District membership belongs on the **meter** (the connection
+point), not the building, and each connection is **primary** or **backup** — backup
+optional. **Do not** cap connections per utility type and **do not** reject a backup that
+reuses the primary's district: both are conventions, not constraints. Plant↔district is
+many-to-many. Districts aren't built yet (`DISTRICT-1`); don't model them as a flavour of
+Complex, and don't hang them off buildings.
 
 Plants and distributed energy resources are **not modeled yet** — `/plants` is an explicit
 placeholder. It is decided that plants are **their own asset type** with their own
 production data, so don't add them as a `building_type`, a complex flag, or a variant of
 `meters`. See `PLANTS-1` in `TODO.md` — one question (what a plant attaches to) is still
 open.
+
+**Meter ownership is derived, not stored.** `/connections` calls a meter utility-owned when
+it has an `account_id` and internally-owned when it doesn't, and says so on screen. Don't
+treat that split as authoritative — the real fix is `METER-1` (a `meters.ownership` enum).
+
+**Bill allocation splits each charge component separately**, never a blended percentage of
+the total, and the parts must sum exactly to the invoice — rounding residue is reconciled
+onto the largest line. For submetered methods the master-minus-submeters shortfall is an
+explicit remainder line, never absorbed into the metered buildings. The run is persisted
+(`bill_allocations.basis` snapshots the inputs) so the arithmetic stays reproducible after
+the underlying square footage or occupancy changes. Missing basis data raises a typed
+`AllocationError`, not a silent zero share. Calculation lives in
+`bill-allocation-math.ts` (pure, no DB); persistence in `bill-allocation.ts`.

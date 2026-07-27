@@ -336,18 +336,33 @@ async function main() {
 				location: 'Central plant switchgear'
 			})
 			.returning();
-		await db.insert(meters).values({
-			buildingId: buildingIds['Science Hall'],
-			parentMeterId: plantMaster.id,
-			isSubmeter: true,
-			meterNumber: 'MTR-ELEC-SUB-SCI',
-			utilityType: 'electricity',
-			unit: 'kwh',
-			status: 'active',
-			multiplier: '1',
-			location: 'Science Hall electrical closet'
-		});
-		console.log('  ✅ complex master meter + submeter');
+		// Both complex buildings get a submeter so the master bill can be split by
+		// measurement, with the master-minus-submeters shortfall left as common area.
+		await db.insert(meters).values([
+			{
+				buildingId: buildingIds['Science Hall'],
+				parentMeterId: plantMaster.id,
+				isSubmeter: true,
+				meterNumber: 'MTR-ELEC-SUB-SCI',
+				utilityType: 'electricity' as const,
+				unit: 'kwh' as const,
+				status: 'active' as const,
+				multiplier: '1',
+				location: 'Science Hall electrical closet'
+			},
+			{
+				buildingId: buildingIds['Student Center'],
+				parentMeterId: plantMaster.id,
+				isSubmeter: true,
+				meterNumber: 'MTR-ELEC-SUB-STU',
+				utilityType: 'electricity' as const,
+				unit: 'kwh' as const,
+				status: 'active' as const,
+				multiplier: '1',
+				location: 'Student Center main switchboard'
+			}
+		]);
+		console.log('  ✅ complex master meter + 2 submeters');
 
 		// 12 months of bills per account with seasonal shape
 		const today = new Date();
@@ -386,6 +401,35 @@ async function main() {
 				status: monthsAgo <= 1 ? 'pending' : 'paid',
 				paymentDate: monthsAgo <= 1 ? null : fmt(dueDate),
 				readingType: 'actual'
+			});
+			billCount++;
+
+			// Master bill for the complex — this is the one that gets allocated across
+			// Science Hall and Student Center.
+			const masterUsage = Math.round(96000 * summerFactor + Math.random() * 4000);
+			const masterDemand = Math.round(380 * summerFactor + Math.random() * 20);
+			const masterEnergy = masterUsage * 0.109;
+			const masterDemandCharge = masterDemand * 12.5;
+			const masterTaxes = (masterEnergy + masterDemandCharge + 120) * 0.06;
+			await db.insert(utilityBills).values({
+				accountId: elecAccount.id,
+				meterId: plantMaster.id,
+				statementDate: fmt(statementDate),
+				periodStart: fmt(periodStart),
+				periodEnd: fmt(periodEnd),
+				dueDate: fmt(dueDate),
+				usage: String(masterUsage),
+				unit: 'kWh',
+				demandKw: String(masterDemand),
+				energyCharge: masterEnergy.toFixed(2),
+				demandCharge: masterDemandCharge.toFixed(2),
+				fixedCharge: '120',
+				taxesFees: masterTaxes.toFixed(2),
+				totalCost: (masterEnergy + masterDemandCharge + 120 + masterTaxes).toFixed(2),
+				status: monthsAgo <= 1 ? 'pending' : 'paid',
+				paymentDate: monthsAgo <= 1 ? null : fmt(dueDate),
+				readingType: 'actual',
+				notes: 'Central plant master meter — covers Science Hall and Student Center.'
 			});
 			billCount++;
 
@@ -474,6 +518,13 @@ async function main() {
 		const seededMeters = await db.select().from(meters);
 		let readingCount = 0;
 		const rToday = new Date();
+		// The complex master reads high; its submeters read a share of it, so the
+		// master-minus-submeters remainder is a realistic ~25% common-area load.
+		const baseByMeter: Record<string, number> = {
+			'MTR-ELEC-MASTER': 96000,
+			'MTR-ELEC-SUB-SCI': 43000,
+			'MTR-ELEC-SUB-STU': 28000
+		};
 		for (const meter of seededMeters) {
 			for (let monthsAgo = 11; monthsAgo >= 0; monthsAgo--) {
 				const periodEnd = new Date(rToday.getFullYear(), rToday.getMonth() - monthsAgo + 1, 0);
@@ -482,7 +533,7 @@ async function main() {
 				const factor = isElectric
 					? 1 + 0.35 * Math.cos(((month - 6) / 12) * 2 * Math.PI)
 					: 1 + 0.6 * Math.cos((month / 12) * 2 * Math.PI);
-				const base = isElectric ? 40000 : 2800;
+				const base = baseByMeter[meter.meterNumber] ?? (isElectric ? 40000 : 2800);
 				const usage = Math.round(base * factor + Math.random() * base * 0.05);
 				await db.insert(energyReadings).values({
 					meterId: meter.id,

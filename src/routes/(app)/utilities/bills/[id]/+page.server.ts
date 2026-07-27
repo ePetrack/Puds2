@@ -11,8 +11,18 @@ import {
 	sumBillCharges,
 	hasChargeMismatch
 } from '$lib/server/services/bill-metrics';
+import {
+	allocationContext,
+	previewAllocation,
+	saveAllocation,
+	deleteAllocation,
+	getAllocation,
+	AllocationError
+} from '$lib/server/services/bill-allocation';
 import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import { BILL_STATUSES } from '$lib/schemas/utility';
+import { allocationSchema, parseFixedPercentages } from '$lib/schemas/allocation';
+import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import type { UtilityBill } from '$lib/server/db/schema';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -22,7 +32,12 @@ export const load: PageServerLoad = async ({ params }) => {
 		error(404, 'Bill not found');
 	}
 
-	const history = await billHistoryForAccount(bill.accountId);
+	const [history, allocation, context] = await Promise.all([
+		billHistoryForAccount(bill.accountId),
+		getAllocation(bill.id),
+		allocationContext(bill.id)
+	]);
+
 	const previousBills = history
 		.filter((b) => b.id !== bill.id && b.periodEnd < bill.periodStart)
 		.slice(0, 6)
@@ -34,7 +49,9 @@ export const load: PageServerLoad = async ({ params }) => {
 		comparison: compareBillToHistory(bill, history),
 		chargesSum: sumBillCharges(bill),
 		chargesMismatch: hasChargeMismatch(bill),
-		previousBills
+		previousBills,
+		allocation,
+		allocationContext: context
 	};
 };
 
@@ -56,6 +73,67 @@ export const actions: Actions = {
 		locals.log.info({ billId: params.id, status }, 'bill status changed');
 		return { statusChanged: status };
 	},
+	// Preview and save share one shape so the operator sees exactly the table that will
+	// be persisted — ISO 50001 traceability starts with the reviewer seeing the arithmetic.
+	previewAllocation: async ({ request, params }) => {
+		const form = await request.formData();
+		const parsed = allocationSchema.safeParse(formDataToObject(form));
+		if (!parsed.success) {
+			return fail(400, { allocationErrors: fieldErrors(parsed.error) });
+		}
+
+		try {
+			const preview = await previewAllocation(
+				params.id,
+				parsed.data.method,
+				parseFixedPercentages(form)
+			);
+			return { allocationPreview: preview, allocationNotes: parsed.data.notes ?? '' };
+		} catch (err) {
+			if (err instanceof AllocationError) {
+				return fail(400, { allocationErrors: { [err.field]: err.message } });
+			}
+			throw err;
+		}
+	},
+
+	saveAllocation: async ({ request, params, locals }) => {
+		const user = requireRole(locals.user, WRITE_ROLES);
+		const form = await request.formData();
+		const parsed = allocationSchema.safeParse(formDataToObject(form));
+		if (!parsed.success) {
+			return fail(400, { allocationErrors: fieldErrors(parsed.error) });
+		}
+
+		try {
+			await saveAllocation(
+				user.id,
+				params.id,
+				parsed.data.method,
+				parsed.data.notes,
+				parseFixedPercentages(form)
+			);
+		} catch (err) {
+			if (err instanceof AllocationError) {
+				return fail(400, { allocationErrors: { [err.field]: err.message } });
+			}
+			throw err;
+		}
+
+		locals.log.info({ billId: params.id, method: parsed.data.method }, 'bill allocation saved');
+		return { allocationSaved: true };
+	},
+
+	deleteAllocation: async ({ params, locals }) => {
+		const user = requireRole(locals.user, WRITE_ROLES);
+		const deleted = await deleteAllocation(user.id, params.id);
+		if (!deleted) {
+			return fail(404, { allocationErrors: { _form: 'No allocation to remove' } });
+		}
+		locals.log.info({ billId: params.id }, 'bill allocation removed');
+		return { allocationDeleted: true };
+	},
+
 	delete: async ({ params, locals }) => {
 		const user = requireRole(locals.user, WRITE_ROLES);
 		const deleted = await deleteBill(user.id, params.id);
