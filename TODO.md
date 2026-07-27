@@ -97,6 +97,53 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   - [ ] handles partial coverage (not every load submetered) without implying error
   - [ ] unit tests for a master with 0, 1, and several submeters
 
+### QOL-1 — Extract the duplicated list-page shell
+
+- **status:** todo
+- **priority:** P1
+- **effort:** M
+- **blocked_by:** none
+- **files:** `src/lib/components/ui/`, and the list pages under `src/routes/(app)/` —
+  `clients`, `buildings`, `campuses`, `complexes`, `projects`, `energy`, `utilities/bills`
+- **why:** Six milestones were each built and shipped independently, so the same list-page
+  scaffolding got copied rather than shared. Measured on the current tree:
+  - `function pageHref` is duplicated verbatim across **7** list pages
+  - the delete-confirm modal + `toast` + `invalidateAll()` block appears in **14** files
+  - ~14k lines of app source are served by only **6** shared components (4 form fields,
+    `Modal`, `Toast`)
+
+  Nothing is broken — this is compounding cost, not a defect. Every new entity currently
+  costs another copy of the same ~150 lines, and a fix to (say) pagination or the delete
+  flow has to be applied 7–14 times.
+
+- **do this before `PLANTS-1`** — plants adds a list page, a form and a detail page, so
+  building it first makes it copy #15 instead of the first consumer of the shared parts.
+- **approach:** extract a `DataTable` / list-page shell (filter form, table, empty state,
+  pagination) and a `ConfirmDelete` component wrapping the modal + toast + invalidate
+  cycle. Keep them dumb and prop-driven; the services and routes don't change.
+- **acceptance:**
+  - [ ] `pageHref` exists once, not seven times
+  - [ ] delete-confirm flow exists once
+  - [ ] every existing list page uses the shared parts, with no visual change
+  - [ ] `npm test` and `npm run test:e2e` green with no test rewrites (behaviour identical)
+
+### QOL-2 — Whole-codebase review passes
+
+- **status:** todo
+- **priority:** P2
+- **effort:** M
+- **blocked_by:** none
+- **files:** repo-wide
+- **why:** The code has never had a holistic pass — every review so far was scoped to the
+  milestone being shipped. Worth running now that the feature surface is broad:
+  accessibility (forms, tables, modals, keyboard traps), a security review of the auth,
+  upload and download paths since M1, loading/error states on slow or failed loads, and
+  N+1 query checks in the list services.
+- **acceptance:**
+  - [ ] a11y pass over forms, tables and modals
+  - [ ] security review of auth, RBAC, upload and download paths
+  - [ ] findings either fixed or filed as their own TODO items
+
 ### PLANTS-1 — Design the plant / DER data model
 
 - **status:** todo
@@ -124,7 +171,9 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 ### HIER-1 — Complexes as maintenance districts / responsibility areas
 
 - **status:** todo
-- **priority:** P2
+- **priority:** P3 — **deliberately on the back burner.** The cardinality question is
+  settled and the current schema already satisfies it, so nothing is broken or blocking.
+  The `complex_type` enum is a refinement to pick up later; don't start it unprompted.
 - **effort:** S — reduced by the cardinality decision below
 - **blocked_by:** none
 - **files:** `src/lib/server/db/schema.ts`, `src/lib/server/services/complexes.ts`
