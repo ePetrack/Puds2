@@ -72,9 +72,30 @@ Client
   type and rejects self-references and cycles; `is_submeter` is derived from the parent
   link. Energy readings and utility bills reference `meter_id`, so a complex master
   meter carries its own readings and bills with no extra tables.
-- **Future:** plants and distributed energy & water resources (DER) are a planned
-  additional premise/asset type alongside Building and Complex — the nullable-premise
-  and master/submeter model already leaves room for them.
+
+### Decisions
+
+- **A building belongs to at most one complex, and membership is optional.** This is what
+  `buildings.complex_id` already expresses (nullable single FK) — deliberately _not_ a join
+  table.
+- **Complex and District are separate axes and must not be conflated.** A **Complex** is
+  the _physical_ hierarchy: buildings grouped by physical arrangement, forming the metering
+  premise. A **District** is a _utility distribution network_ scoped by utility type — a
+  heating district, a cooling district, an electrical district — i.e. the service network a
+  central plant feeds. Because the axes are independent, a building sits in one Complex and
+  simultaneously in a heating, cooling and electrical district; steam, chilled-water and
+  electrical primary loops each serve a different, often overlapping, set of buildings.
+  District membership attaches to the **meter**, not the building — a meter is the physical
+  connection point to a network — and each connection is either **primary** or **backup**,
+  with backup optional. A hospital wing might sit on a primary heating district and a
+  backup one; most buildings have only a primary. Districts are not yet built — tracked as
+  `DISTRICT-1`, and worth designing alongside `PLANTS-1` since the chain is
+  **Plant → District → Meters → Buildings**.
+- **Plants are their own asset type**, not a `building_type`, a complex flag, or a variant
+  of `meters`. Generation and production assets get a dedicated table with their own
+  production data, because they don't fit the consumption-meter model: flow is
+  bidirectional, capacity is rated, and fuel input is measured against output. Tracked as
+  `PLANTS-1`; `/plants` is an explicit placeholder until then.
 
 ## Authentication & authorization
 

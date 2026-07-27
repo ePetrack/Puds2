@@ -97,45 +97,144 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   - [ ] handles partial coverage (not every load submetered) without implying error
   - [ ] unit tests for a master with 0, 1, and several submeters
 
+### QOL-1 — Extract the duplicated list-page shell
+
+- **status:** todo
+- **priority:** P1
+- **effort:** M
+- **blocked_by:** none
+- **files:** `src/lib/components/ui/`, and the list pages under `src/routes/(app)/` —
+  `clients`, `buildings`, `campuses`, `complexes`, `projects`, `energy`, `utilities/bills`
+- **why:** Six milestones were each built and shipped independently, so the same list-page
+  scaffolding got copied rather than shared. Measured on the current tree:
+  - `function pageHref` is duplicated verbatim across **7** list pages
+  - the delete-confirm modal + `toast` + `invalidateAll()` block appears in **14** files
+  - ~14k lines of app source are served by only **6** shared components (4 form fields,
+    `Modal`, `Toast`)
+
+  Nothing is broken — this is compounding cost, not a defect. Every new entity currently
+  costs another copy of the same ~150 lines, and a fix to (say) pagination or the delete
+  flow has to be applied 7–14 times.
+
+- **do this before `PLANTS-1`** — plants adds a list page, a form and a detail page, so
+  building it first makes it copy #15 instead of the first consumer of the shared parts.
+- **approach:** extract a `DataTable` / list-page shell (filter form, table, empty state,
+  pagination) and a `ConfirmDelete` component wrapping the modal + toast + invalidate
+  cycle. Keep them dumb and prop-driven; the services and routes don't change.
+- **acceptance:**
+  - [ ] `pageHref` exists once, not seven times
+  - [ ] delete-confirm flow exists once
+  - [ ] every existing list page uses the shared parts, with no visual change
+  - [ ] `npm test` and `npm run test:e2e` green with no test rewrites (behaviour identical)
+
+### QOL-2 — Whole-codebase review passes
+
+- **status:** todo
+- **priority:** P2
+- **effort:** M
+- **blocked_by:** none
+- **files:** repo-wide
+- **why:** The code has never had a holistic pass — every review so far was scoped to the
+  milestone being shipped. Worth running now that the feature surface is broad:
+  accessibility (forms, tables, modals, keyboard traps), a security review of the auth,
+  upload and download paths since M1, loading/error states on slow or failed loads, and
+  N+1 query checks in the list services.
+- **acceptance:**
+  - [ ] a11y pass over forms, tables and modals
+  - [ ] security review of auth, RBAC, upload and download paths
+  - [ ] findings either fixed or filed as their own TODO items
+
 ### PLANTS-1 — Design the plant / DER data model
 
 - **status:** todo
 - **priority:** P2
 - **effort:** L
-- **blocked_by:** none — but needs a product decision first
+- **blocked_by:** none — one attachment question outstanding, see below
 - **files:** `src/lib/server/db/schema.ts`, `src/routes/(app)/plants/+page.svelte`
 - **why:** "Plant management" is one of the five primary nav areas but has no data behind
   it — `/plants` is an explicit placeholder. Generation assets don't fit the consumption
   meter schema: bidirectional flow, capacity ratings, and fuel input measured against
   output. Central plants, solar PV, storage, CHP, and water resources are all in scope.
-- **open questions (ask before building):**
-  - Is a plant a new entity, or a `building_type` / complex flag?
-  - Does a plant attach to a campus, a complex, both, or stand alone?
-  - Do plants get meters, or a separate production-reading table?
+- **decided:** plants are **their own asset type** — a dedicated `plants` table with its own
+  production data, _not_ a `building_type`, a complex flag, or a variant of `meters`. Don't
+  reuse the consumption-meter schema for generation.
+- **still open:** what a plant attaches to — client directly, campus, complex, or building
+  (a rooftop array sits on a building; a central utility plant sits on a campus). Likely a
+  nullable optional-parent set mirroring how buildings attach today.
 - **acceptance:**
-  - [ ] questions above answered and recorded in `ARCHITECTURE.md`
-  - [ ] migration + service with audit logging + CRUD, matching the M5 pattern
+  - [ ] attachment question answered and recorded in `ARCHITECTURE.md`
+  - [ ] `plants` table + migration; production readings separate from `energy_readings`
+  - [ ] service with audit logging + CRUD, matching the M5 pattern
   - [ ] `/plants` placeholder replaced; seed gains a demo plant
   - [ ] unit + e2e coverage
 
-### HIER-1 — Complexes as maintenance districts / responsibility areas
+### HIER-1 — ~~Complexes as maintenance districts~~ (superseded by `DISTRICT-1`)
+
+- **status:** done — closed as **superseded**, not built
+- **priority:** —
+- **why superseded:** this item assumed a Complex could _also_ be a maintenance district,
+  handled via a `complex_type` enum. That premise is wrong. Complex and District are
+  **separate concepts on separate axes** — see `DISTRICT-1`. No `complex_type` enum; a
+  Complex is purely physical. Kept for ID stability; do not implement.
+
+### DISTRICT-1 — Districts as utility distribution networks
 
 - **status:** todo
 - **priority:** P2
 - **effort:** M
-- **blocked_by:** none — needs a modeling decision first
-- **files:** `src/lib/server/db/schema.ts`, `src/lib/server/services/complexes.ts`
-- **why:** Explicitly flagged when the hierarchy was requested: _"Further development of
-  campus into 'complexes' that corresponds to maintenance districts, responsibility areas,
-  etc., needs to be completed."_ Today a Complex is only a metering premise (buildings
-  sharing one master meter).
-- **open question:** add a `complex_type` enum (metering premise / maintenance district /
-  responsibility area), or allow a building to belong to several complexes for different
-  purposes? The second is a bigger schema change (join table) but models reality better.
+- **blocked_by:** none — but see the relationship to `PLANTS-1` below
+- **files:** `src/lib/server/db/schema.ts`, new `src/lib/server/services/districts.ts`,
+  new routes under `src/routes/(app)/districts/`
+- **why:** Complex and District are different axes and must not be conflated:
+  - **Complex = physical hierarchy.** Buildings grouped by physical arrangement — the
+    metering premise. A building belongs to **at most one**, optionally.
+  - **District = utility distribution network**, scoped by utility type: a heating
+    district, a cooling district, an electrical district. These are the service networks
+    a central plant feeds.
+
+  The axes are independent, so a building sits in one Complex _and_ simultaneously in a
+  heating district, a cooling district, and an electrical district. Steam, chilled water,
+  and electrical primary loops each serve a different (often overlapping) set of buildings
+  — which is exactly why one grouping can't express both.
+
+- **resolves an earlier concern:** `HIER-1` flagged that a single Complex would have to
+  serve as both metering premise and district. With districts as their own entity that
+  tension disappears, and the "one complex per building" rule stands unharmed.
+- **district membership attaches to the METER, not the building.** A meter is the physical
+  connection point to a distribution network, so that is where the link belongs. This
+  replaces an earlier building↔district join-table sketch, which was wrong.
+- **primary and backup:** a connection carries a role — **primary** or **backup**. Backup
+  is **optional**; many buildings have none. Redundancy is common in hospitals and federal
+  facilities that cannot lose heat, so a building may have a primary heating meter on
+  District A and a backup heating meter on District B.
+- **model sketch:**
+  - `districts` table: `utility_type` (reuse the existing `utilityType` enum), scoped to a
+    client and optionally a campus.
+  - `meters.district_id` — nullable FK; `meters.district_role` — enum
+    `primary` | `backup`, meaningful only when `district_id` is set.
+  - **validation:** a meter's `utility_type` must match its district's `utility_type` —
+    the same class of rule as the existing submeter check, so it belongs in
+    `assertValidMeter` in `src/lib/server/services/meters.ts` alongside the parent-meter
+    and premise rules.
+  - Because a meter already carries exactly one `utility_type`, the earlier
+    "one district per utility type" constraint is expressed naturally and needs no join
+    table or composite unique index.
+- **still open (minor, decide during build):** should a building be limited to one primary
+  and one backup per utility type, or is that left to convention? And must a backup be a
+  _different_ district from the primary? Both are cheap to enforce if wanted.
+- **relationship to `PLANTS-1`:** a district is the distribution network a plant feeds —
+  **Plant → District → Meters → Buildings**. Worth designing the two together so the
+  plant's output connects to the district it serves rather than bolting the link on
+  afterwards.
 - **acceptance:**
-  - [ ] decision recorded in `ARCHITECTURE.md`
-  - [ ] schema + migration + service validation
-  - [ ] complex list/detail expose the new dimension
+  - [ ] `districts` table + migration; `meters.district_id` + `district_role`
+  - [ ] utility-type match enforced in `assertValidMeter`, with a typed field error
+  - [ ] service with audit logging + CRUD, matching the M5 pattern
+  - [ ] meter form exposes district + role; district detail lists connected meters and
+        their buildings, primary and backup distinguished
+  - [ ] unit tests: type mismatch rejected, backup optional, a building with primary-only
+        and one with primary + backup
+  - [ ] Complex vs. District distinction documented in `ARCHITECTURE.md`
 
 ### UI-1 — Visual pass against the Figma comp
 
