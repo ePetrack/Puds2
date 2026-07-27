@@ -23,26 +23,51 @@
 		document.documentElement.classList.toggle('dark', isDark);
 	}
 
-	const navigation = [
-		{ name: 'Dashboard', href: '/', icon: '📊' },
-		{ name: 'Clients', href: '/clients', icon: '🏢' },
-		{ name: 'Campuses', href: '/campuses', icon: '🎓' },
-		{ name: 'Complexes', href: '/complexes', icon: '🏘️' },
-		{ name: 'Buildings', href: '/buildings', icon: '🏛️' },
-		{ name: 'Projects', href: '/projects', icon: '📋' },
-		{ name: 'Utilities', href: '/utilities', icon: '💡' },
-		{ name: 'Energy Data', href: '/energy', icon: '⚡' },
-		{ name: 'Analysis', href: '/analysis', icon: '📈' },
-		{ name: 'Tasks', href: '/tasks', icon: '✅' },
-		{ name: 'Documents', href: '/documents', icon: '📁' }
+	// Primary workflow areas lead the sidebar; supporting tools sit in a second
+	// group so they stay reachable without crowding the top level.
+	const navSections = [
+		{
+			label: null,
+			items: [
+				{ name: 'Home', href: '/', icon: '🏠' },
+				{ name: 'Bill Management', href: '/utilities/bills', icon: '🧾' },
+				{ name: 'Utility Accounts', href: '/utilities/accounts', icon: '🏦' },
+				{ name: 'Plant Management', href: '/plants', icon: '⚙️' },
+				{ name: 'Facility Management', href: '/facilities', icon: '🏛️' }
+			]
+		},
+		{
+			label: 'Insights & Work',
+			items: [
+				{ name: 'Clients', href: '/clients', icon: '🏢' },
+				{ name: 'Energy Data', href: '/energy', icon: '⚡' },
+				{ name: 'Analysis', href: '/analysis', icon: '📈' },
+				{ name: 'Projects', href: '/projects', icon: '📋' },
+				{ name: 'Tasks', href: '/tasks', icon: '✅' },
+				{ name: 'Documents', href: '/documents', icon: '📁' }
+			]
+		}
 	];
 
+	const allNavItems = navSections.flatMap((s) => s.items);
+
+	// Facility Management owns the physical-hierarchy routes; Bill Management and
+	// Utility Accounts are siblings under /utilities, so they need exact-prefix
+	// matching to avoid both highlighting at once.
+	const sectionRoutes: Record<string, string[]> = {
+		'/facilities': ['/facilities', '/campuses', '/complexes', '/buildings', '/utilities/meters']
+	};
+
 	function isActive(href: string) {
-		if (href === '/') {
-			return $page.url.pathname === '/';
-		}
-		return $page.url.pathname.startsWith(href);
+		const path = $page.url.pathname;
+		if (href === '/') return path === '/';
+		const owned = sectionRoutes[href] ?? [href];
+		return owned.some((prefix) => path === prefix || path.startsWith(prefix + '/'));
 	}
+
+	let currentTitle = $derived(
+		allNavItems.find((item) => isActive(item.href))?.name ?? 'Energy Management Platform'
+	);
 </script>
 
 <div class="flex h-screen overflow-hidden">
@@ -70,14 +95,34 @@
 				</button>
 			</div>
 
-			<nav class="flex-1 space-y-1 overflow-y-auto p-4">
-				{#each navigation as item (item.href)}
-					<a href={item.href} class="sidebar-link" class:sidebar-link-active={isActive(item.href)}>
-						<span class="text-xl">{item.icon}</span>
-						{#if sidebarOpen}
-							<span>{item.name}</span>
+			<nav class="flex-1 overflow-y-auto p-4">
+				{#each navSections as section, i (section.label ?? i)}
+					<div class:mt-6={i > 0}>
+						{#if section.label && sidebarOpen}
+							<p
+								class="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+							>
+								{section.label}
+							</p>
+						{:else if section.label}
+							<hr class="my-3 border-gray-200 dark:border-gray-700" />
 						{/if}
-					</a>
+						<div class="space-y-1">
+							{#each section.items as item (item.href)}
+								<a
+									href={item.href}
+									class="sidebar-link"
+									class:sidebar-link-active={isActive(item.href)}
+									title={sidebarOpen ? undefined : item.name}
+								>
+									<span class="text-xl">{item.icon}</span>
+									{#if sidebarOpen}
+										<span>{item.name}</span>
+									{/if}
+								</a>
+							{/each}
+						</div>
+					</div>
 				{/each}
 			</nav>
 
@@ -124,7 +169,7 @@
 			class="flex h-16 items-center border-b border-gray-200 bg-white px-6 dark:border-gray-700 dark:bg-gray-800"
 		>
 			<h2 class="text-2xl font-semibold text-gray-900 dark:text-white">
-				{navigation.find((n) => isActive(n.href))?.name || 'Energy Management Platform'}
+				{currentTitle}
 			</h2>
 		</header>
 
