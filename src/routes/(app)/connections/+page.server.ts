@@ -3,18 +3,17 @@ import { listBuildings } from '$lib/server/services/buildings';
 import { listComplexes } from '$lib/server/services/complexes';
 import { listAccounts } from '$lib/server/services/utility-accounts';
 import { listClients } from '$lib/server/services/clients';
+import { deriveOwnership, type MeterOwnership } from '$lib/server/services/meter-chain';
 import { UTILITY_TYPES } from '$lib/schemas/utility';
 import type { Meter } from '$lib/server/db/schema';
 import type { PageServerLoad } from './$types';
 
 /**
- * Ownership is *derived*, not stored. `meters` has no ownership column; the available
- * signal is the account link — a meter billed under a utility account is in practice the
- * utility's revenue meter, and one with no account is the client's own internal meter.
- * The page states this on screen. An explicit `meters.ownership` enum is tracked as
- * `METER-1` in TODO.md.
+ * Ownership is *derived*, not stored — see `deriveOwnership` in `meter-chain.ts` for the
+ * heuristic and its limits. The page states on screen that the split is derived. An
+ * explicit `meters.ownership` enum is tracked as `METER-1` in TODO.md.
  */
-export type Ownership = 'utility' | 'internal';
+export type Ownership = MeterOwnership;
 
 export interface ConnectionMeter {
 	id: string;
@@ -92,7 +91,7 @@ export const load: PageServerLoad = async ({ url }) => {
 			utilityType: m.utilityType,
 			unit: m.unit,
 			status: m.status,
-			ownership: m.accountId ? 'utility' : 'internal',
+			ownership: deriveOwnership(m),
 			accountId: m.accountId,
 			accountNumber: account?.accountNumber ?? m.accountNumber,
 			providerName: account?.providerName ?? null,

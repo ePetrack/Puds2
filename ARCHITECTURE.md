@@ -138,6 +138,29 @@ fall outside the billing period raise a warning instead of being averaged away.
 Saving replaces any prior allocation for the bill and writes `audit_log` in the same
 transaction. The UI previews the computed table before anything is written.
 
+## The meter chain
+
+**Attribution runs meter → meter, not premise → premise.** A utility-owned revenue meter
+feeds one or more internally-owned meters, and `meters.parent_meter_id` is that connection —
+the meter is the physical connection point, the same principle that puts district membership
+on the meter rather than the building.
+
+`src/lib/server/services/meter-chain.ts` resolves it, and is pure with no database access so
+it unit-tests directly (same split as `bill-allocation-math.ts` vs `bill-allocation.ts`):
+
+- `deriveOwnership(meter)` — `utility` when the meter has an `account_id`, `internal`
+  otherwise. This heuristic is **the** definition of ownership until `METER-1` adds a stored
+  column, so it lives here and `/connections` imports it rather than inlining a copy.
+- `resolveChain(metersById, meterId)` — the immediate parent plus the **revenue meter**: the
+  nearest ancestor with an account, found by walking `parent_meter_id` upward. A
+  utility-owned meter is its own revenue meter; a chain that is internal all the way up has
+  none, which is a reportable gap rather than an error. Cycle-guarded, because a reporting
+  query must not hang on a row that predates `assertValidMeter`'s cycle check.
+- `chainResolver(metersById)` — the same, memoised, for callers resolving thousands of rows.
+
+Surfacing this chain in `/analysis` is `ANALYTICS-1`, still open: widening the dataset stops
+the Perspective WASM engine booting, tracked as `ANALYSIS-1`.
+
 ## Authentication & authorization
 
 - **better-auth** with email/password; sessions persisted in Postgres (`session` table),

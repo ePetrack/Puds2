@@ -66,21 +66,38 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   - [ ] a check fails if `loadEnv` is removed (existing e2e runs the built server, so it
         cannot catch this class of bug)
 
-### ANALYTICS-1 — Analysis can't pivot by campus or complex
+### ANALYTICS-1 — Analysis can't pivot by campus, complex, or the meter chain
 
-- **status:** todo
+- **status:** blocked — the service layer landed, the dataset widening did not
 - **priority:** P1
 - **effort:** M
-- **blocked_by:** none
-- **files:** `src/lib/server/services/analysis.ts`, `src/routes/(app)/analysis/`
-- **why:** M5 added campuses and complexes, but `analysis.ts` contains **zero** references
-  to either (verified by grep). The Perspective dataset exposes client / building /
-  provider / account / meter — so the hierarchy just built is invisible to reporting. This
-  is the cheapest work with the most visible payoff.
+- **blocked_by:** ANALYSIS-1
+- **files:** `src/lib/server/services/analysis.ts`,
+  `src/lib/server/services/meter-chain.ts`, `src/routes/(app)/analysis/`
+- **why:** M5 added campuses and complexes, but `analysis.ts` contained **zero** references
+  to either. Worse, the readings query reached the client via `buildings.client_id`, so a
+  complex master meter — which has no building — landed in the dataset with no building
+  **and no client**. The seed creates readings for every meter, so those rows were already
+  there, silently unattributed.
+- **resolved axis:** attribution runs **meter → meter**, not premise → premise. A
+  utility-owned revenue meter feeds internally-owned meters, and `parent_meter_id` is that
+  link. Campus and complex are context (where a row sits), not the attribution mechanism.
+- **shipped:** `meter-chain.ts` — pure `deriveOwnership` + `resolveChain` + `chainResolver`,
+  walking `parent_meter_id` to the nearest utility-owned ancestor, memoised and
+  cycle-guarded, with 10 unit tests. `/connections` now imports `deriveOwnership` instead of
+  inlining it, so `METER-1` has one call site to delete rather than several.
+- **not shipped:** the dataset widening itself. It was written and its 11 service tests
+  passed, but it stops `/analysis` booting — see `ANALYSIS-1`, which records the exact
+  columns and joins so this can be rebuilt once that is understood. Reverted rather than
+  merged, because the page renders an error state with it in place.
+- **not done, deliberately:** no per-building cost derived from a master bill. The audited
+  allocation from PR #8 is the only sanctioned split; a live one in the reporting layer
+  could disagree with the saved run. Feeding `bill_allocation_lines` in is a later step.
 - **acceptance:**
-  - [ ] dataset rows include `campusName` and `complexName`
+  - [x] `resolveChain` available for reporting and for `ANALYTICS-2`
+  - [ ] dataset rows include campus and complex
   - [ ] both usable as Perspective group-by dimensions
-  - [ ] a preset view showing cost or usage grouped by campus
+  - [ ] a preset view showing cost grouped by campus
   - [ ] existing analysis e2e still passes
 
 ### ANALYTICS-2 — Master-vs-submeter reconciliation
@@ -88,20 +105,92 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 - **status:** todo
 - **priority:** P1
 - **effort:** M
-- **blocked_by:** ANALYTICS-1
+- **blocked_by:** none — `meter-chain.ts` shipped, which was the prerequisite
 - **files:** `src/lib/server/services/meters.ts` (`listSubmeters`),
   `src/lib/server/services/energy-readings.ts`, `src/routes/(app)/analysis/`
 - **why:** `meters.parent_meter_id` now exists, so a complex master meter can be compared
   against the sum of its submeters for the same period — surfacing unaccounted energy and
   line loss. Standard M&V work that consultants bill for; newly possible and not yet built.
-- **reuse:** the master-minus-submeters arithmetic already exists in
-  `src/lib/server/services/bill-allocation-math.ts`, which computes the shortfall as an
-  explicit remainder line. Lift that rather than writing a second implementation; this item
-  is the per-period _view_ over it.
+- **reuse:** two pieces already exist — don't reimplement either.
+  - `src/lib/server/services/bill-allocation-math.ts` computes the master-minus-submeters
+    shortfall as an explicit remainder line. This item is the per-period _view_ over it.
+  - `src/lib/server/services/meter-chain.ts` (`resolveChain`) already groups a meter under
+    the revenue meter that bills it, which is exactly the pairing this reconciliation needs.
 - **acceptance:**
   - [ ] per-period view: master total, sum of submeters, delta, delta %
   - [ ] handles partial coverage (not every load submetered) without implying error
   - [ ] unit tests for a master with 0, 1, and several submeters
+
+### ANALYSIS-1 — widening the analysis dataset stops the Perspective engine booting
+
+- **status:** blocked — root cause not isolated
+- **priority:** P0 (blocks finishing `ANALYTICS-1`)
+- **effort:** M
+- **blocked_by:** none
+- **files:** `src/lib/components/PerspectiveViewer.svelte`,
+  `src/lib/server/services/analysis.ts`, `vite.config.ts`
+- **why:** With the `ANALYTICS-1` columns added to `getAnalysisDataset()`, `/analysis`
+  renders the component's error state — `Missing perspective-client.wasm` — instead of the
+  viewer. Bisected against the PR #8 merge commit: **clean passes 3/3, the widened dataset
+  fails 4/4.** So it is caused by this change, not pre-existing.
+- **what makes no sense yet, and is the crux:** the error is thrown by
+  `perspective.worker()`, which runs **before** any data reaches the engine —
+  `@finos/perspective` reads its client WASM off the registered `<perspective-viewer>`
+  element (`customElements.get("perspective-viewer")`, else throw) and that element is
+  never defined on the failing path. A server-side query change should not be able to
+  affect that. The most plausible remaining explanation is that the larger SSR payload
+  shifts main-thread timing enough to starve the viewer module's async init, but that is
+  unproven and the numbers look too small for it.
+- **ruled out:**
+  - Column count — trimming from 7 new columns to 5 (dropping `premise`/`premise_type`)
+    still fails 4/4.
+  - The preset changes — reverting `analysis/+page.svelte` to its original presets while
+    keeping the new dataset still fails 3/3.
+  - Any external fetch — a request log over a full `/analysis` load shows **zero**
+    non-localhost requests, so this is not a blocked CDN.
+- **what did NOT work** (tried and reverted; don't repeat):
+  - `await customElements.whenDefined('perspective-viewer')` — the element is never defined
+    on the failing path, so this converts a fast error into a hang. 5/5 fail.
+  - Explicit `init_server` / `init_client` with `?url` WASM imports. This _does_ make Vite
+    emit `perspective-server.wasm`, `perspective-js.wasm` and `perspective-viewer.wasm` as
+    build assets (they are otherwise absent, and all three then serve 200) and the element
+    _does_ register — but the engine then traps on `unreachable` inside the WASM with no JS
+    frames. Some init ordering or argument shape is still wrong.
+- **next things to try:** bisect the dataset field-by-field rather than in groups, to find
+  whether one specific column triggers it; pin the official bundler recipe for
+  `@finos/perspective` 3.8 rather than inferring it from `.d.ts`; try
+  `optimizeDeps.exclude` for the perspective packages; and try streaming the dataset from
+  an endpoint instead of the SSR payload, which would settle the timing theory.
+- **the reverted change, so it can be rebuilt** — in `getAnalysisDataset()`:
+  - Five fields added to `AnalysisRecord`: `campus`, `complex`, `meter_ownership`,
+    `parent_meter`, `revenue_meter`. The last three come from
+    `chainResolver(metersById)(row.meterId)`, fed by a third query in the existing
+    `Promise.all` selecting `id, meter_number, parent_meter_id, account_id` from `meters`.
+  - Four Drizzle `alias()` joins, because a meter's premise is a building XOR a complex and
+    both client and campus therefore have two routes: `building_campus`
+    (`buildings.campus_id`), `complex_campus` (`complexes.campus_id`), `building_complex`
+    (`buildings.complex_id`), and `complex_client` (`complexes.client_id`).
+  - Resolution: `campus = buildingCampus ?? complexCampus`,
+    `complex = complexName ?? buildingComplexName`, and on readings
+    `client = clientName ?? complexClientName`.
+  - **That last fallback is a real bug fix worth keeping when this is rebuilt.** Readings
+    join the client via `buildings.client_id`, so a complex master meter — which has no
+    building — currently lands in the dataset with no building _and no client_. The seed
+    creates readings for every meter, so those rows are already there, unattributed.
+  - Presets added to `analysis/+page.svelte`: **Cost by Campus** (`group_by: ['campus']`,
+    split by utility type, sum of cost, filtered to bills) and **Revenue Meter vs
+    Submeters** (`group_by: ['revenue_meter', 'meter_number']`, split by `meter_ownership`,
+    sum of usage, filtered to readings).
+  - `tests/unit/analysis.service.test.ts` covered all of the above and passed (11 tests);
+    it was removed with the revert and should come back with it.
+- **acceptance:**
+  - [ ] `/analysis` renders the viewer with the widened dataset, repeatably
+  - [ ] the cause is understood and written down, not worked around by chance
+  - [ ] the WASM binaries are build assets rather than resolved implicitly
+- **acceptance:**
+  - [ ] `/analysis` renders the viewer on every load, not just the first
+  - [ ] a second e2e test loading `/analysis` in a fresh context passes repeatedly
+  - [ ] the WASM binaries are build assets, not fetched from anywhere external
 
 ### QOL-1 — Extract the duplicated list-page shell
 
