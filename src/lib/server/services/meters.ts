@@ -40,6 +40,7 @@ function toRow(input: MeterInput) {
 		utilityType: input.utilityType,
 		unit: input.unit,
 		status: input.status,
+		ownership: input.ownership ?? 'unknown',
 		multiplier: input.multiplier !== undefined ? String(input.multiplier) : null,
 		installDate: input.installDate ?? null,
 		location: input.location ?? null,

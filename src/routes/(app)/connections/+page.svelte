@@ -1,5 +1,10 @@
 <script lang="ts">
-	import { UTILITY_TYPES, formatEnumLabel } from '$lib/schemas/utility';
+	import {
+		UTILITY_TYPES,
+		METER_OWNERSHIPS,
+		OWNERSHIP_LABEL,
+		formatEnumLabel
+	} from '$lib/schemas/utility';
 
 	let { data } = $props();
 
@@ -7,7 +12,10 @@
 	let gaps = $derived(data.gaps);
 	let counts = $derived(data.counts);
 	let gapCount = $derived(
-		gaps.unattributed.length + gaps.accountsWithoutMeters.length + gaps.premiseMismatches.length
+		gaps.unattributed.length +
+			gaps.unrecordedOwnership.length +
+			gaps.accountsWithoutMeters.length +
+			gaps.premiseMismatches.length
 	);
 
 	const statusColors: Record<string, string> = {
@@ -33,10 +41,10 @@
 		class="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200"
 	>
 		<p>
-			<strong>Ownership shown here is derived, not recorded.</strong> A meter billed under a utility
-			account is treated as the <em>utility's</em> revenue meter; a meter with no account is treated
-			as <em>internally owned</em>. Meters have no ownership field yet — until they do, correct this
-			by attaching or clearing the account on the meter.
+			<strong>Ownership is recorded on the meter, not inferred from its account.</strong> The two
+			differ in practice: a client-owned meter can still be billed under a utility account, and a
+			utility meter may not be linked to one yet. Meters whose ownership has never been recorded
+			show as <em>Not recorded</em> and are listed under Gaps — set it on the meter to clear them.
 		</p>
 	</div>
 
@@ -63,25 +71,24 @@
 		<div class="w-48">
 			<label class="label" for="ownership">Ownership</label>
 			<select id="ownership" name="ownership" class="input">
-				<option value="">Both</option>
-				<option value="utility" selected={data.filters.ownership === 'utility'}>
-					Utility-owned
-				</option>
-				<option value="internal" selected={data.filters.ownership === 'internal'}>
-					Internally-owned
-				</option>
+				<option value="">All</option>
+				{#each METER_OWNERSHIPS as o (o)}
+					<option value={o} selected={data.filters.ownership === o}>{OWNERSHIP_LABEL[o]}</option>
+				{/each}
 			</select>
 		</div>
 		<button type="submit" class="btn btn-secondary">Filter</button>
 		<p class="pb-2 text-sm text-gray-500 dark:text-gray-400">
 			{counts.meters} meter{counts.meters === 1 ? '' : 's'} · {counts.utility} utility-owned · {counts.internal}
-			internal · {counts.accounts} account{counts.accounts === 1 ? '' : 's'}
+			client-owned · {counts.unknown} not recorded · {counts.accounts} account{counts.accounts === 1
+				? ''
+				: 's'}
 		</p>
 	</form>
 
 	<!-- Gaps first: an unattributed meter or an account with nothing behind it is the
 	     reason to open this page at all. -->
-	<div class="card p-6">
+	<div class="card p-6" data-testid="gaps">
 		<h2 class="mb-1 text-lg font-semibold text-gray-900 dark:text-white">
 			Gaps
 			<span
@@ -101,7 +108,34 @@
 				Every meter is attributed and every account has at least one meter.
 			</p>
 		{:else}
-			<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+			<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+				<div>
+					<h3 class="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
+						Ownership not recorded ({gaps.unrecordedOwnership.length})
+					</h3>
+					<p class="mb-2 text-xs text-gray-500 dark:text-gray-400">
+						Nobody has said whether the utility or the client owns these. Until they do, any report
+						that splits by ownership is incomplete.
+					</p>
+					{#if gaps.unrecordedOwnership.length === 0}
+						<p class="text-sm text-gray-400 dark:text-gray-500">None</p>
+					{:else}
+						<ul class="space-y-1 text-sm">
+							{#each gaps.unrecordedOwnership as m (m.id)}
+								<li>
+									<a
+										href="/utilities/meters/{m.id}/edit"
+										class="text-blue-600 hover:underline dark:text-blue-400">{m.meterNumber}</a
+									>
+									<span class="text-gray-500 dark:text-gray-400"
+										>— {m.premiseName ?? 'no premise'}</span
+									>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+
 				<div>
 					<h3 class="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
 						Unattributed meters ({gaps.unattributed.length})
@@ -216,8 +250,8 @@
 						{/if}
 					</div>
 
-					<div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-						{#each [{ title: 'Utility-owned meters', hint: 'Revenue meters — billed under a utility account', meters: premise.utilityMeters, utility: true }, { title: 'Internally-owned meters', hint: 'Client-owned meters and submeters — no account of their own', meters: premise.internalMeters, utility: false }] as col (col.title)}
+					<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+						{#each [{ title: 'Utility-owned meters', hint: 'Owned by the utility — usually the revenue meter', meters: premise.utilityMeters, utility: true }, { title: 'Client-owned meters', hint: 'Owned by the client, including submeters', meters: premise.internalMeters, utility: false }, { title: 'Ownership not recorded', hint: 'Nobody has said who owns these yet', meters: premise.unknownMeters, utility: false }] as col (col.title)}
 							<div>
 								<h3 class="text-sm font-semibold text-gray-900 dark:text-white">{col.title}</h3>
 								<p class="mb-2 text-xs text-gray-500 dark:text-gray-400">{col.hint}</p>

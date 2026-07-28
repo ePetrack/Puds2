@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	deriveOwnership,
-	resolveChain,
-	chainResolver,
-	type ChainMeter
-} from '$lib/server/services/meter-chain';
+import { resolveChain, chainResolver, type ChainMeter } from '$lib/server/services/meter-chain';
 
 function meter(id: string, overrides: Partial<Omit<ChainMeter, 'id'>> = {}): ChainMeter {
 	return {
@@ -20,37 +15,27 @@ function mapOf(...ms: ChainMeter[]) {
 	return new Map(ms.map((m) => [m.id, m]));
 }
 
-describe('deriveOwnership', () => {
-	it('treats a meter with a utility account as the utility’s', () => {
-		expect(deriveOwnership({ accountId: 'acct-1' })).toBe('utility');
-	});
-
-	it('treats a meter with no account as internally owned', () => {
-		expect(deriveOwnership({ accountId: null })).toBe('internal');
-	});
-});
-
 describe('resolveChain', () => {
-	it('makes a utility-owned meter its own revenue meter', () => {
+	it('makes a billed meter its own revenue meter', () => {
 		const m = meter('master', { accountId: 'acct-1' });
 		const chain = resolveChain(mapOf(m), 'master')!;
 
-		expect(chain.ownership).toBe('utility');
+		expect(chain.billed).toBe(true);
 		expect(chain.parentMeterNumber).toBeNull();
 		expect(chain.revenueMeterNumber).toBe('MASTER');
 	});
 
-	it('resolves a submeter up to its utility-owned parent', () => {
+	it('resolves a submeter up to the billed parent', () => {
 		const master = meter('master', { accountId: 'acct-1' });
 		const sub = meter('sub', { parentMeterId: 'master' });
 		const chain = resolveChain(mapOf(master, sub), 'sub')!;
 
-		expect(chain.ownership).toBe('internal');
+		expect(chain.billed).toBe(false);
 		expect(chain.parentMeterNumber).toBe('MASTER');
 		expect(chain.revenueMeterNumber).toBe('MASTER');
 	});
 
-	it('walks past intermediate internal meters to the billing root', () => {
+	it('walks past intermediate unbilled meters to the billing root', () => {
 		const master = meter('master', { accountId: 'acct-1' });
 		const mid = meter('mid', { parentMeterId: 'master' });
 		const leaf = meter('leaf', { parentMeterId: 'mid' });
@@ -66,7 +51,7 @@ describe('resolveChain', () => {
 		const orphan = meter('c', { parentMeterId: 'p' });
 		const chain = resolveChain(mapOf(orphanParent, orphan), 'c')!;
 
-		expect(chain.ownership).toBe('internal');
+		expect(chain.billed).toBe(false);
 		expect(chain.parentMeterNumber).toBe('P');
 		expect(chain.revenueMeterNumber).toBeNull();
 	});

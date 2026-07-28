@@ -4,6 +4,8 @@
 		UTILITY_TYPES,
 		METER_UNITS,
 		METER_STATUSES,
+		METER_OWNERSHIPS,
+		OWNERSHIP_LABEL,
 		formatEnumLabel
 	} from '$lib/schemas/utility';
 
@@ -124,6 +126,19 @@
 	</div>
 
 	<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+		<FormField
+			label="Ownership"
+			hint="Who owns the meter — separate from who bills through it"
+			error={errors.ownership}
+		>
+			<select name="ownership" class="input">
+				{#each METER_OWNERSHIPS as o (o)}
+					<option value={o} selected={(values.ownership ?? 'unknown') === o}>
+						{OWNERSHIP_LABEL[o]}
+					</option>
+				{/each}
+			</select>
+		</FormField>
 		<FormField label="Utility Account" hint="Filtered by utility type" error={errors.accountId}>
 			<select name="accountId" class="input">
 				<option value="" selected={!values.accountId}>None</option>

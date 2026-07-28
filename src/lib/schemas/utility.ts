@@ -30,6 +30,20 @@ export const METER_UNITS = [
 ] as const;
 export const BILL_STATUSES = ['pending', 'approved', 'paid', 'disputed'] as const;
 
+/**
+ * Who owns the physical meter — distinct from who bills through it. A client-owned meter
+ * can still sit under a utility account, and a utility meter may not be linked to one yet,
+ * so this is recorded rather than inferred from `accountId`. `unknown` is the honest state
+ * for a portfolio that hasn't been surveyed.
+ */
+export const METER_OWNERSHIPS = ['utility', 'client', 'unknown'] as const;
+
+export const OWNERSHIP_LABEL: Record<(typeof METER_OWNERSHIPS)[number], string> = {
+	utility: 'Utility-owned',
+	client: 'Client-owned',
+	unknown: 'Not recorded'
+};
+
 const emptyToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
 
 export const providerSchema = z.object({
@@ -88,6 +102,9 @@ export const meterSchema = z
 		utilityType: z.enum(UTILITY_TYPES),
 		unit: z.enum(METER_UNITS),
 		status: z.enum(METER_STATUSES),
+		// Optional rather than defaulted, so callers constructing a meter don't have to state
+		// ownership they don't know; the service and the column both fall back to `unknown`.
+		ownership: z.preprocess(emptyToUndefined, z.enum(METER_OWNERSHIPS).optional()),
 		multiplier: optionalNumber({ min: 0 }),
 		installDate: optionalDate(),
 		location: optionalText(200),

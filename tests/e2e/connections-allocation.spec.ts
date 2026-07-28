@@ -34,24 +34,47 @@ test.describe('connections review', () => {
 		await signIn(page);
 	});
 
-	test('splits meters into utility-owned and internally-owned, and says the split is derived', async ({
-		page
-	}) => {
+	test('splits meters by recorded ownership', async ({ page }) => {
 		await page.goto('/connections');
 		await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
-		await expect(page.getByText('Ownership shown here is derived, not recorded.')).toBeVisible();
+		await expect(
+			page.getByText('Ownership is recorded on the meter, not inferred from its account.')
+		).toBeVisible();
 
-		// The seeded master meter bills to an account; its submeters do not.
+		// The seed records the master as the utility's and the submeters as the client's.
 		await expect(page.getByRole('link', { name: 'MTR-ELEC-MASTER' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'MTR-ELEC-SUB-SCI' })).toBeVisible();
 		await expect(page.getByText('Utility-owned meters').first()).toBeVisible();
-		await expect(page.getByText('Internally-owned meters').first()).toBeVisible();
+		await expect(page.getByText('Client-owned meters').first()).toBeVisible();
 	});
 
-	test('the ownership filter narrows to one side', async ({ page }) => {
+	test('the ownership filter narrows to one recorded value', async ({ page }) => {
 		await page.goto('/connections?ownership=utility');
 		await expect(page.getByRole('link', { name: 'MTR-ELEC-MASTER' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'MTR-ELEC-SUB-SCI' })).toHaveCount(0);
+
+		await page.goto('/connections?ownership=client');
+		await expect(page.getByRole('link', { name: 'MTR-ELEC-SUB-SCI' })).toBeVisible();
+		await expect(page.getByRole('link', { name: 'MTR-ELEC-MASTER' })).toHaveCount(0);
+	});
+
+	test('lists meters whose ownership has never been recorded as a gap', async ({ page }) => {
+		// A meter created without stating ownership must not be silently assumed either way.
+		const meterNo = `E2E-OWN-${Date.now()}`;
+		await page.goto('/utilities/meters/new');
+		await page.locator('select[name="buildingId"]').selectOption({ label: 'Main Library' });
+		await page.locator('input[name="meterNumber"]').fill(meterNo);
+		await page.locator('select[name="utilityType"]').selectOption({ label: 'Electricity' });
+		await page.locator('select[name="unit"]').selectOption({ label: 'kWh' });
+		await page.getByRole('button', { name: 'Create Meter' }).click();
+		await expect(page).toHaveURL('/utilities/meters');
+
+		await page.goto('/connections');
+		const gaps = page.getByTestId('gaps');
+		await expect(gaps.getByText('Ownership not recorded', { exact: false })).toBeVisible();
+		// This meter has two distinct gaps — ownership was never recorded, and it has neither
+		// an account nor a parent — so it is listed under both panels, which is correct.
+		await expect(gaps.getByRole('link', { name: meterNo })).toHaveCount(2);
 	});
 
 	test('reports a meter with no account and no parent as a gap', async ({ page }) => {
@@ -69,8 +92,9 @@ test.describe('connections review', () => {
 		await expect(page).toHaveURL('/utilities/meters');
 
 		await page.goto('/connections');
-		await expect(page.getByText('Unattributed meters', { exact: false })).toBeVisible();
-		await expect(page.getByRole('link', { name: meterNo })).toHaveCount(2); // gaps + premise list
+		const gaps = page.getByTestId('gaps');
+		await expect(gaps.getByText('Unattributed meters', { exact: false })).toBeVisible();
+		await expect(gaps.getByRole('link', { name: meterNo }).first()).toBeVisible();
 	});
 
 	test('is reachable from the sidebar', async ({ page }) => {

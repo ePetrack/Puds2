@@ -43,10 +43,10 @@ Two areas are hubs rather than entities of their own:
 
 **`/connections`** (under "Insights & Work") is a read-only review of how buildings, meters
 and utility accounts wire together. It composes existing list services — no service or table
-of its own — grouping meters by premise into utility-owned and internally-owned columns, and
-leading with a **Gaps** panel: meters with neither an account nor a parent, accounts with no
-meters, and submeters sitting outside their parent's premise. Ownership is **derived** from
-`meters.account_id`, which the page states on screen; an explicit column is `METER-1`.
+of its own — grouping meters by premise into utility-owned, client-owned and not-recorded
+columns, and leading with a **Gaps** panel: meters whose ownership was never recorded,
+meters with neither an account nor a parent, accounts with no meters, and submeters sitting
+outside their parent's premise.
 
 Because `/utilities/bills` and `/utilities/accounts` are siblings, a plain prefix match
 would highlight both. A `sectionRoutes` map declares which paths each nav item owns —
@@ -138,28 +138,42 @@ fall outside the billing period raise a warning instead of being averaged away.
 Saving replaces any prior allocation for the bill and writes `audit_log` in the same
 transaction. The UI previews the computed table before anything is written.
 
+## Ownership vs. billing
+
+These are two different facts about a meter and the codebase keeps them apart:
+
+- **Ownership** — who owns the hardware. Recorded in `meters.ownership`
+  (`utility` | `client` | `unknown`), never inferred.
+- **Billing** — which meter the utility invoices against, i.e. which one carries an
+  `account_id`. Resolved by walking the meter chain.
+
+They legitimately disagree: a client-owned meter can be billed under a utility account, and
+a utility meter may not be linked to one yet. `/connections` originally derived ownership
+from `account_id`; `METER-1` replaced that with the recorded column, and the migration
+backfills only the half the data supports — meters _with_ an account become `utility`, the
+rest stay `unknown` rather than being assumed to be the client's. `unknown` is a reportable
+gap, not a silent default.
+
 ## The meter chain
 
-**Attribution runs meter → meter, not premise → premise.** A utility-owned revenue meter
-feeds one or more internally-owned meters, and `meters.parent_meter_id` is that connection —
-the meter is the physical connection point, the same principle that puts district membership
-on the meter rather than the building.
+**Attribution runs meter → meter, not premise → premise.** A revenue meter feeds one or more
+meters downstream, and `meters.parent_meter_id` is that connection — the meter is the
+physical connection point, the same principle that puts district membership on the meter
+rather than the building.
 
 `src/lib/server/services/meter-chain.ts` resolves it, and is pure with no database access so
 it unit-tests directly (same split as `bill-allocation-math.ts` vs `bill-allocation.ts`):
 
-- `deriveOwnership(meter)` — `utility` when the meter has an `account_id`, `internal`
-  otherwise. This heuristic is **the** definition of ownership until `METER-1` adds a stored
-  column, so it lives here and `/connections` imports it rather than inlining a copy.
-- `resolveChain(metersById, meterId)` — the immediate parent plus the **revenue meter**: the
-  nearest ancestor with an account, found by walking `parent_meter_id` upward. A
-  utility-owned meter is its own revenue meter; a chain that is internal all the way up has
-  none, which is a reportable gap rather than an error. Cycle-guarded, because a reporting
-  query must not hang on a row that predates `assertValidMeter`'s cycle check.
+- `resolveChain(metersById, meterId)` — whether the meter is itself billed, its immediate
+  parent, and the **revenue meter**: the nearest ancestor carrying an account, found by
+  walking `parent_meter_id` upward. A billed meter is its own revenue meter; a chain that is
+  unbilled all the way up has none, which is a reportable gap rather than an error.
+  Cycle-guarded, because a reporting query must not hang on a row that predates
+  `assertValidMeter`'s cycle check.
 - `chainResolver(metersById)` — the same, memoised, for callers resolving thousands of rows.
 
-Surfacing this chain in `/analysis` is `ANALYTICS-1`, still open: widening the dataset stops
-the Perspective WASM engine booting, tracked as `ANALYSIS-1`.
+Surfacing this chain in `/analysis` is `ANALYTICS-1`, still open: widening the dataset makes
+the pre-existing Perspective boot failure reliable, tracked as `ANALYSIS-1`.
 
 ## Meter reconciliation
 

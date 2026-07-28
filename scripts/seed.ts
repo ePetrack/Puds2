@@ -303,6 +303,7 @@ async function main() {
 				utilityType: 'electricity',
 				unit: 'kwh',
 				status: 'active',
+				ownership: 'utility',
 				multiplier: '1',
 				location: 'Basement mechanical room'
 			})
@@ -316,6 +317,7 @@ async function main() {
 				utilityType: 'natural_gas',
 				unit: 'therms',
 				status: 'active',
+				ownership: 'utility',
 				multiplier: '1',
 				location: 'North exterior wall'
 			})
@@ -332,6 +334,7 @@ async function main() {
 				utilityType: 'electricity',
 				unit: 'kwh',
 				status: 'active',
+				ownership: 'utility',
 				multiplier: '1',
 				location: 'Central plant switchgear'
 			})
@@ -347,6 +350,7 @@ async function main() {
 				utilityType: 'electricity' as const,
 				unit: 'kwh' as const,
 				status: 'active' as const,
+				ownership: 'client' as const,
 				multiplier: '1',
 				location: 'Science Hall electrical closet'
 			},
@@ -358,6 +362,7 @@ async function main() {
 				utilityType: 'electricity' as const,
 				unit: 'kwh' as const,
 				status: 'active' as const,
+				ownership: 'client' as const,
 				multiplier: '1',
 				location: 'Student Center main switchboard'
 			}

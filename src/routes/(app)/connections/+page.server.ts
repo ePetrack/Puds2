@@ -3,17 +3,17 @@ import { listBuildings } from '$lib/server/services/buildings';
 import { listComplexes } from '$lib/server/services/complexes';
 import { listAccounts } from '$lib/server/services/utility-accounts';
 import { listClients } from '$lib/server/services/clients';
-import { deriveOwnership, type MeterOwnership } from '$lib/server/services/meter-chain';
-import { UTILITY_TYPES } from '$lib/schemas/utility';
+import { UTILITY_TYPES, METER_OWNERSHIPS } from '$lib/schemas/utility';
 import type { Meter } from '$lib/server/db/schema';
 import type { PageServerLoad } from './$types';
 
 /**
- * Ownership is *derived*, not stored — see `deriveOwnership` in `meter-chain.ts` for the
- * heuristic and its limits. The page states on screen that the split is derived. An
- * explicit `meters.ownership` enum is tracked as `METER-1` in TODO.md.
+ * Ownership is **recorded** on the meter (`meters.ownership`), not inferred from whether an
+ * account is attached. The two genuinely differ: a client-owned meter can be billed under a
+ * utility account, and a utility meter may not be linked to one yet. Meters whose ownership
+ * has never been recorded read as `unknown` and are surfaced as a gap rather than guessed at.
  */
-export type Ownership = MeterOwnership;
+export type Ownership = Meter['ownership'];
 
 export interface ConnectionMeter {
 	id: string;
@@ -38,6 +38,7 @@ export interface PremiseGroup {
 	href: string | null;
 	utilityMeters: ConnectionMeter[];
 	internalMeters: ConnectionMeter[];
+	unknownMeters: ConnectionMeter[];
 }
 
 export const load: PageServerLoad = async ({ url }) => {
@@ -91,7 +92,7 @@ export const load: PageServerLoad = async ({ url }) => {
 			utilityType: m.utilityType,
 			unit: m.unit,
 			status: m.status,
-			ownership: deriveOwnership(m),
+			ownership: m.ownership,
 			accountId: m.accountId,
 			accountNumber: account?.accountNumber ?? m.accountNumber,
 			providerName: account?.providerName ?? null,
@@ -122,26 +123,32 @@ export const load: PageServerLoad = async ({ url }) => {
 						? `/complexes/${m.complexId}`
 						: null,
 				utilityMeters: [],
-				internalMeters: []
+				internalMeters: [],
+				unknownMeters: []
 			};
 			groups.set(key, group);
 		}
 		const conn = toConnection(m);
 		if (conn.ownership === 'utility') group.utilityMeters.push(conn);
-		else group.internalMeters.push(conn);
+		else if (conn.ownership === 'client') group.internalMeters.push(conn);
+		else group.unknownMeters.push(conn);
 	}
 
-	// Ownership filter hides the other column rather than dropping whole premises.
-	const ownership: Ownership | '' =
-		ownershipParam === 'utility' || ownershipParam === 'internal' ? ownershipParam : '';
+	// The ownership filter hides the other columns rather than dropping whole premises.
+	const ownership: Ownership | '' = (METER_OWNERSHIPS as readonly string[]).includes(ownershipParam)
+		? (ownershipParam as Ownership)
+		: '';
 
 	const premises = [...groups.values()]
 		.map((g) => ({
 			...g,
-			utilityMeters: ownership === 'internal' ? [] : g.utilityMeters,
-			internalMeters: ownership === 'utility' ? [] : g.internalMeters
+			utilityMeters: ownership && ownership !== 'utility' ? [] : g.utilityMeters,
+			internalMeters: ownership && ownership !== 'client' ? [] : g.internalMeters,
+			unknownMeters: ownership && ownership !== 'unknown' ? [] : g.unknownMeters
 		}))
-		.filter((g) => g.utilityMeters.length > 0 || g.internalMeters.length > 0)
+		.filter(
+			(g) => g.utilityMeters.length > 0 || g.internalMeters.length > 0 || g.unknownMeters.length > 0
+		)
 		.sort((a, b) => a.name.localeCompare(b.name));
 
 	// --- Gaps: the audit value of this page -------------------------------------------
@@ -150,6 +157,10 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	const unattributed = scoped
 		.filter((m) => !m.accountId && !m.parentMeterId)
+		.map((m) => ({ id: m.id, meterNumber: m.meterNumber, premiseName: m.premiseName }));
+
+	const unrecordedOwnership = scoped
+		.filter((m) => m.ownership === 'unknown')
 		.map((m) => ({ id: m.id, meterNumber: m.meterNumber, premiseName: m.premiseName }));
 
 	const accountsWithoutMeters = accounts
@@ -186,11 +197,12 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	return {
 		premises,
-		gaps: { unattributed, accountsWithoutMeters, premiseMismatches },
+		gaps: { unattributed, unrecordedOwnership, accountsWithoutMeters, premiseMismatches },
 		counts: {
 			meters: scoped.length,
-			utility: scoped.filter((m) => m.accountId).length,
-			internal: scoped.filter((m) => !m.accountId).length,
+			utility: scoped.filter((m) => m.ownership === 'utility').length,
+			internal: scoped.filter((m) => m.ownership === 'client').length,
+			unknown: scoped.filter((m) => m.ownership === 'unknown').length,
 			accounts: accounts.length
 		},
 		clientOptions: clientsPage.items.map((c) => ({ id: c.id, name: c.name })),

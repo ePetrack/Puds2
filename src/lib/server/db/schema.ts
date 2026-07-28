@@ -215,6 +215,13 @@ export const utilityType = pgEnum('utility_type', [
 export const rateType = pgEnum('rate_type', ['flat', 'tiered', 'time_of_use', 'demand', 'custom']);
 export const accountStatus = pgEnum('account_status', ['active', 'pending', 'closed']);
 export const meterStatus = pgEnum('meter_status', ['active', 'inactive', 'retired']);
+/**
+ * Who owns the physical meter. Deliberately distinct from *who bills through it*: a
+ * client-owned meter can still be billed under a utility account, and a utility meter may
+ * not be linked to one yet. `unknown` is a real answer for an unsurveyed portfolio, and is
+ * better than guessing.
+ */
+export const meterOwnership = pgEnum('meter_ownership', ['utility', 'client', 'unknown']);
 export const meterUnit = pgEnum('meter_unit', [
 	'kwh',
 	'therms',
@@ -313,6 +320,7 @@ export const meters = pgTable(
 		utilityType: utilityType('utility_type').notNull(),
 		unit: meterUnit('unit').notNull(),
 		status: meterStatus('status').notNull().default('active'),
+		ownership: meterOwnership('ownership').notNull().default('unknown'),
 		isSubmeter: boolean('is_submeter').notNull().default(false),
 		multiplier: numeric('multiplier', { precision: 10, scale: 4 }),
 		installDate: date('install_date'),

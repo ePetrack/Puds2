@@ -37,6 +37,7 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Connections & allocation  | `/connections` relationship review with a gaps panel; per-component bill allocation with preview, remainder line and persisted run | #8  |
 | Meter chain               | `meter-chain.ts` — ownership + revenue-meter resolution walking `parent_meter_id`, shared with `/connections`                      | #9  |
 | Reconciliation            | `/reconciliation` — master vs submeters per period, partial coverage reported not faulted, missing reads excluded from totals      | #10 |
+| Meter ownership           | `meters.ownership` recorded rather than inferred; ownership and billing separated; unrecorded ownership surfaced as a gap          | #10 |
 
 **Current gate:** lint + typecheck clean · 132 Vitest · 44 Playwright.
 
@@ -81,13 +82,13 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   complex master meter — which has no building — landed in the dataset with no building
   **and no client**. The seed creates readings for every meter, so those rows were already
   there, silently unattributed.
-- **resolved axis:** attribution runs **meter → meter**, not premise → premise. A
-  utility-owned revenue meter feeds internally-owned meters, and `parent_meter_id` is that
-  link. Campus and complex are context (where a row sits), not the attribution mechanism.
-- **shipped:** `meter-chain.ts` — pure `deriveOwnership` + `resolveChain` + `chainResolver`,
-  walking `parent_meter_id` to the nearest utility-owned ancestor, memoised and
-  cycle-guarded, with 10 unit tests. `/connections` now imports `deriveOwnership` instead of
-  inlining it, so `METER-1` has one call site to delete rather than several.
+- **resolved axis:** attribution runs **meter → meter**, not premise → premise. A revenue
+  meter feeds the meters downstream of it, and `parent_meter_id` is that link. Campus and
+  complex are context (where a row sits), not the attribution mechanism.
+- **shipped:** `meter-chain.ts` — pure `resolveChain` + `chainResolver`, walking
+  `parent_meter_id` to the nearest billed ancestor, memoised and cycle-guarded. (It also
+  carried the interim `deriveOwnership` heuristic, which `METER-1` has since removed in
+  favour of the recorded `meters.ownership` column.)
 - **not shipped:** the dataset widening itself. It was written and its 11 service tests
   passed, but it makes the pre-existing `ANALYSIS-1` boot failure reliable rather than
   occasional, so `/analysis` renders an error state with it in place. Reverted rather than
@@ -330,28 +331,34 @@ perspective-client.wasm` — instead of the viewer. **This is pre-existing and r
 
 ### METER-1 — Record meter ownership instead of deriving it
 
-- **status:** todo
+- **status:** done
 - **priority:** P2
 - **effort:** S
 - **blocked_by:** none
-- **files:** `src/lib/server/db/schema.ts`, `src/lib/schemas/utility.ts`,
-  `src/routes/(app)/utilities/meters/`, `src/routes/(app)/connections/+page.server.ts`
-- **why:** `/connections` splits meters into utility-owned and internally-owned, but
-  `meters` has **no ownership column**. The page derives it from `account_id` — a meter
-  billed under a utility account is treated as the utility's revenue meter, one without as
-  the client's own. That heuristic is right most of the time and wrong in two real cases: a
-  client-owned meter the utility happens to bill against, and a utility meter not yet
-  linked to an account. The page says on screen that the split is derived; that is a
-  disclosure, not a fix.
-- **approach:** a `meter_ownership` pgEnum (`utility` | `client` | `unknown`) with a
-  `meters.ownership` column defaulting to `unknown`; backfill from `account_id` in the
-  migration to preserve what the current UI shows. Then `/connections` groups on the column
-  and drops the derivation notice.
+- **files:** `src/lib/server/db/schema.ts`, `drizzle/0006_meter_ownership.sql`,
+  `src/lib/schemas/utility.ts`, `src/lib/components/utilities/MeterForm.svelte`,
+  `src/routes/(app)/connections/+page.server.ts`,
+  `src/lib/server/services/meter-chain.ts`
+- **why:** `/connections` split meters into utility- and internally-owned by asking whether
+  an `account_id` was attached. That heuristic is wrong in two real cases — a client-owned
+  meter the utility bills against, and a utility meter not yet linked to an account — and it
+  conflated two different facts.
+- **shipped:** `meter_ownership` enum (`utility` | `client` | `unknown`) and
+  `meters.ownership`, exposed on the meter form, grouped on by `/connections`, and seeded
+  explicitly. The old `deriveOwnership` helper is gone.
+- **the split that mattered:** ownership (who owns the hardware) and billing (which meter
+  carries the account) are now separate. `meter-chain.ts` no longer speaks about ownership
+  at all — it reports `billed` and the `revenueMeterNumber`, which is a billing question.
+- **the backfill decision:** only the half the data supports. Meters **with** an account
+  become `utility`; the rest stay `unknown` rather than becoming `client`. "No account
+  linked" is equally consistent with a utility meter nobody has attached yet, so recording
+  it as client-owned would promote a guess to a fact — the exact problem this item exists to
+  remove. `unknown` surfaces on `/connections` as a gap to fill.
 - **acceptance:**
-  - [ ] `meters.ownership` column + migration with an `account_id`-based backfill
-  - [ ] meter create/edit form exposes it
-  - [ ] `/connections` groups on the column; the "derived, not recorded" banner is removed
-  - [ ] unit test covering a client-owned meter that still bills to a utility account
+  - [x] `meters.ownership` column + migration with an `account_id`-based backfill
+  - [x] meter create/edit form exposes it
+  - [x] `/connections` groups on the column; the "derived, not recorded" banner is removed
+  - [x] unit test covering a client-owned meter with no account, and the `unknown` default
 
 ### ALLOC-1 — Weather-normalised and EnPI-based allocation
 
