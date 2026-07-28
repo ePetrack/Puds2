@@ -13,11 +13,12 @@ Tailwind · Vitest · Playwright · GitHub Actions.
 
 ## Start here
 
-| File                                   | What it tells you                                       |
-| -------------------------------------- | ------------------------------------------------------- |
-| [`TODO.md`](./TODO.md)                 | What's left, prioritised, with acceptance criteria      |
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Layers, auth model, the physical hierarchy, conventions |
-| [`docs/adr/`](./docs/adr)              | Why the stack is what it is                             |
+| File                                   | What it tells you                                                                   |
+| -------------------------------------- | ----------------------------------------------------------------------------------- |
+| [`LLM-README.md`](./LLM-README.md)     | **Read first.** Environment bring-up and traps that have already cost sessions time |
+| [`TODO.md`](./TODO.md)                 | What's left, prioritised, with acceptance criteria — and what's already been tried  |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Layers, auth model, the physical hierarchy, conventions                             |
+| [`docs/adr/`](./docs/adr)              | Why the stack is what it is                                                         |
 
 ## Commands
 
@@ -110,9 +111,12 @@ production data, so don't add them as a `building_type`, a complex flag, or a va
 `meters`. See `PLANTS-1` in `TODO.md` — one question (what a plant attaches to) is still
 open.
 
-**Meter ownership is derived, not stored.** `/connections` calls a meter utility-owned when
-it has an `account_id` and internally-owned when it doesn't, and says so on screen. Don't
-treat that split as authoritative — the real fix is `METER-1` (a `meters.ownership` enum).
+**Meter ownership and billing are different facts.** Ownership is _recorded_ in
+`meters.ownership` (`utility` | `client` | `unknown`) — never inferred from whether an
+account is attached, because a client-owned meter can be billed under a utility account and
+a utility meter may not be linked to one yet. Billing is which meter carries the account,
+resolved by `meter-chain.ts` (`billed`, `revenueMeterNumber`). `unknown` is a real state
+that `/connections` reports as a gap; don't default it to anything.
 
 **Bill allocation splits each charge component separately**, never a blended percentage of
 the total, and the parts must sum exactly to the invoice — rounding residue is reconciled
@@ -122,3 +126,16 @@ explicit remainder line, never absorbed into the metered buildings. The run is p
 the underlying square footage or occupancy changes. Missing basis data raises a typed
 `AllocationError`, not a silent zero share. Calculation lives in
 `bill-allocation-math.ts` (pure, no DB); persistence in `bill-allocation.ts`.
+
+**`weather_normalized` allocation** fits each building against degree days
+(`regression.ts`, `weather-normalization.ts`) and splits on predicted usage. A model that
+fails ASHRAE Guideline 14 or has under 12 months of history is **not used** — the building
+gets no basis and the reason is recorded. With nothing normalisable the bill falls back to
+an area split, and `basis` records `requestedMethod` vs `appliedMethod`. Degree days are
+stored (`degree_days`), never fetched at runtime: air-gapped sites can't call a weather API
+and a re-fetched series would break reproducibility. There is no import UI yet.
+
+**Reconciliation** (`/reconciliation`) compares a master meter against its **direct**
+submeters per period. Partial coverage is normal and reported as `unaccounted`, not an
+error; only submeters exceeding the master (`over_metered`) is a defect. A period with no
+master read yields a null delta and is excluded from totals.
