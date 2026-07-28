@@ -360,26 +360,40 @@ perspective-client.wasm` — instead of the viewer. **This is pre-existing and r
   - [x] `/connections` groups on the column; the "derived, not recorded" banner is removed
   - [x] unit test covering a client-owned meter with no account, and the `unknown` default
 
-### ALLOC-1 — Weather-normalised and EnPI-based allocation
+### ALLOC-1 — Weather-normalised allocation
 
-- **status:** todo
+- **status:** done
 - **priority:** P3
 - **effort:** M
 - **blocked_by:** none
-- **files:** `src/lib/server/services/bill-allocation-math.ts`,
-  `src/lib/server/services/bill-allocation.ts`
-- **why:** The shipped methods split on a static or measured basis — submetered usage,
-  area, occupancy, equal, fixed percentage, hybrid. They do not adjust for the fact that
-  buildings in one complex have different weather sensitivity, so on an extreme month an
-  area split over-charges a well-insulated building. A refinement, not a defect: IPMVP
-  routine adjustments (HDD/CDD regression, or change-point models per building) would let
-  the basis itself be weather-normalised.
-- **note:** only worth building once `ANALYTICS-2` exists — a normalised split needs the
-  same per-building regression that reconciliation does.
+- **files:** `src/lib/server/services/regression.ts`,
+  `src/lib/server/services/weather-normalization.ts`,
+  `src/lib/server/services/bill-allocation.ts`, `drizzle/0007_degree_days.sql`,
+  `drizzle/0008_weather_normalized_method.sql`
+- **why:** The other methods split on a static or measured basis and ignore that buildings
+  in one complex have different weather sensitivity, so on an extreme month an area split
+  over-charges the well-insulated building for its neighbour's heat.
+- **shipped:** a `weather_normalized` method that fits each building's own consumption
+  against degree days (`usage = intercept + βh·HDD + βc·CDD`) and splits on predicted usage
+  for the bill period. `regression.ts` is a pure OLS with R², CV(RMSE) and NMBE;
+  `degree_days` stores the weather series.
+- **decisions worth keeping:**
+  - **A model that doesn't fit isn't used.** Under 12 months of history, no matching degree
+    days, or ASHRAE Guideline 14 statistics outside threshold, and the building gets no
+    normalised basis with the reason recorded against it.
+  - **Degree days are stored, not fetched.** An air-gapped federal or hospital deployment
+    can't call a weather API, and an allocation isn't reproducible if its weather inputs are
+    re-fetched from a service that may have revised them.
+  - **Fall back, don't fail.** With nothing normalisable the bill is split by area and both
+    the warnings and the `basis` record `requestedMethod` vs `appliedMethod`.
+- **still worth doing:** there is no UI for entering or importing degree days — the seed
+  creates a synthetic series and the table is otherwise populated by hand. A CSV import
+  matching the existing bill importer is the obvious next step. Change-point (3P/5P) models
+  would also beat a fixed 65°F base, since the balance point is properly a fitted parameter.
 - **acceptance:**
-  - [ ] a method that normalises the basis against degree days for the bill period
-  - [ ] the persisted `basis` snapshot records the weather source and model fit
-  - [ ] falls back to the un-normalised basis, with a warning, when data is insufficient
+  - [x] a method that normalises the basis against degree days for the bill period
+  - [x] the persisted `basis` snapshot records the weather source and model fit
+  - [x] falls back to the un-normalised basis, with a warning, when data is insufficient
 
 ### UI-1 — Visual pass against the Figma comp
 

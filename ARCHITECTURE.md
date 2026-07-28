@@ -128,7 +128,8 @@ persistence lives beside it in `bill-allocation.ts`. Three rules come straight f
   inputs as they were, so re-reading an allocation after a building's square footage changes
   shows what was actually assumed. `warnings` and `notes` (static factors) ride along.
 
-Methods: `submetered` · `area` · `occupancy` · `equal` · `fixed_percentage` · `hybrid`. For
+Methods: `submetered` · `area` · `occupancy` · `equal` · `fixed_percentage` · `hybrid` ·
+`weather_normalized`. For
 the submetered methods the master total is compared against the sum of the submeters and the
 shortfall becomes an **explicit remainder line** (`is_remainder`, no `building_id`) labelled
 as common area — never silently absorbed into the metered premises. Missing basis data is a
@@ -137,6 +138,35 @@ fall outside the billing period raise a warning instead of being averaged away.
 
 Saving replaces any prior allocation for the bill and writes `audit_log` in the same
 transaction. The UI previews the computed table before anything is written.
+
+### Weather normalisation
+
+Splitting by floor area assumes every building responds to weather the same way. They don't
+— a leaky 1970s lab and a recent airtight office of identical area have very different
+heating slopes, so in a cold month an area split makes the efficient building subsidise the
+inefficient one's heat. `weather_normalized` applies the IPMVP routine adjustment: fit each
+building's own history against degree days,
+
+```
+usage = intercept + βh · HDD + βc · CDD
+```
+
+and split on what each building _should_ have used under the weather that actually
+occurred. `regression.ts` is the pure fit (OLS with R², CV(RMSE) and NMBE);
+`weather-normalization.ts` assembles the data and predicts the bill period.
+
+- **A model that doesn't fit isn't used.** Fewer than 12 months of history, no matching
+  degree days, or ASHRAE Guideline 14 statistics outside threshold (CV(RMSE) ≤ 15%,
+  |NMBE| ≤ 5% for monthly data) and the building gets no normalised basis, with the reason
+  recorded per building.
+- **It falls back rather than failing.** If no building can be normalised the bill is split
+  by area instead, and both the warnings and the persisted `basis` record `requestedMethod`
+  alongside `appliedMethod`, so a reviewer can see the allocation is not the one asked for.
+- **Degree days are stored, not fetched** (`degree_days`, keyed by station, month and base
+  temperature). An air-gapped deployment can't call a weather API, and an allocation can't
+  stay reproducible if its weather inputs are re-fetched from a service that may revise
+  them. The basis snapshot records the station, base temperature, period degree days, and
+  every building's fitted coefficients and fit statistics.
 
 ## Ownership vs. billing
 

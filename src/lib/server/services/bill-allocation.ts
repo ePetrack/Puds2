@@ -11,6 +11,7 @@ import {
 	type BillAllocationLine
 } from '../db/schema';
 import { recordAudit, diffRecords } from './audit';
+import { normalizeBuildings, type NormalizationResult } from './weather-normalization';
 import {
 	allocateBill,
 	AllocationError,
@@ -148,7 +149,32 @@ export async function previewAllocation(
 		for (const t of targets) t.fixedPct = fixedPct[t.buildingId] ?? 0;
 	}
 
-	const result = allocateBill(method, targets, {
+	// Weather normalisation needs the database, so it happens here and the pure calculator
+	// just receives the expected usage per building.
+	let normalization: NormalizationResult | undefined;
+	let effectiveMethod = method;
+	if (method === 'weather_normalized') {
+		normalization = await normalizeBuildings(
+			targets.map((t) => t.buildingId),
+			bill.periodStart,
+			bill.periodEnd
+		);
+		const expected = new Map(normalization.buildings.map((b) => [b.buildingId, b.expectedUsage]));
+		for (const t of targets) t.normalizedUsage = expected.get(t.buildingId) ?? 0;
+		warnings.push(...normalization.warnings);
+
+		// Falling back rather than failing: an un-normalised split is still defensible, a
+		// silently-partial one is not. The substitution is stated in the warnings and the
+		// saved basis, so a reviewer can see the allocation is not what was asked for.
+		if (targets.every((t) => !t.normalizedUsage)) {
+			effectiveMethod = 'area';
+			warnings.push(
+				'No building could be weather-normalised, so this bill was split by square footage instead'
+			);
+		}
+	}
+
+	const result = allocateBill(effectiveMethod, targets, {
 		usage: num(bill.usage),
 		demandKw: num(bill.demandKw),
 		energyCharge: num(bill.energyCharge),
@@ -159,6 +185,22 @@ export async function previewAllocation(
 	});
 
 	result.warnings = [...warnings, ...result.warnings];
+	if (normalization) {
+		// The weather series, the fitted coefficients and the fit statistics all belong in the
+		// snapshot: without them the number cannot be reproduced or challenged later.
+		result.basis = {
+			...result.basis,
+			requestedMethod: method,
+			appliedMethod: effectiveMethod,
+			weather: {
+				station: normalization.station,
+				baseTempF: normalization.baseTempF,
+				periodHdd: normalization.periodHdd,
+				periodCdd: normalization.periodCdd,
+				buildings: normalization.buildings
+			}
+		};
+	}
 	return result;
 }
 

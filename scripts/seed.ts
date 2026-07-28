@@ -554,6 +554,34 @@ async function main() {
 		console.log(`  ✅ ${readingCount} energy readings`);
 	}
 
+	// 6b. Degree days — the weather driver for weather-normalised allocation.
+	const { degreeDays } = await import('../src/lib/server/db/schema');
+	const existingDD = await db.select().from(degreeDays).limit(1);
+	if (existingDD.length > 0) {
+		console.log('  ⏭️  degree days already exist, skipping');
+	} else {
+		// A temperate northern-hemisphere profile at the usual 65°F base: heating-dominated
+		// in winter, cooling-dominated in summer, both near zero in the shoulder months.
+		const ddToday = new Date();
+		const ddRows = [];
+		for (let monthsAgo = 35; monthsAgo >= 0; monthsAgo--) {
+			const d = new Date(ddToday.getFullYear(), ddToday.getMonth() - monthsAgo, 1);
+			const m = d.getMonth();
+			const winter = Math.max(0, Math.cos((m / 12) * 2 * Math.PI));
+			const summer = Math.max(0, Math.cos(((m - 6) / 12) * 2 * Math.PI));
+			ddRows.push({
+				station: 'KSFO',
+				period: d.toISOString().split('T')[0],
+				baseTempF: '65',
+				hdd: (900 * winter + 20).toFixed(2),
+				cdd: (600 * summer + 10).toFixed(2),
+				source: 'Synthetic demo series'
+			});
+		}
+		await db.insert(degreeDays).values(ddRows);
+		console.log(`  ✅ ${ddRows.length} months of degree days (KSFO, 65°F base)`);
+	}
+
 	// 7. Tasks
 	const { tasks } = await import('../src/lib/server/db/schema');
 	const existingTasks = await db.select().from(tasks).limit(1);

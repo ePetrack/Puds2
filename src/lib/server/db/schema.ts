@@ -391,7 +391,8 @@ export const allocationMethod = pgEnum('allocation_method', [
 	'occupancy',
 	'equal',
 	'fixed_percentage',
-	'hybrid'
+	'hybrid',
+	'weather_normalized'
 ]);
 
 export const billAllocations = pgTable(
@@ -522,8 +523,39 @@ export const energyReadings = pgTable(
 	]
 );
 
+/**
+ * Monthly heating and cooling degree days, the weather driver for normalisation.
+ *
+ * Stored rather than fetched: an air-gapped federal or hospital deployment can't call a
+ * weather API, and an allocation has to stay reproducible years later — which it can't be
+ * if its weather inputs are re-fetched from a service that may have revised them. `station`
+ * and `baseTempF` are part of the key because degree days are meaningless without both;
+ * a 65°F base and an 18°C base are different series.
+ */
+export const degreeDays = pgTable(
+	'degree_days',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		/** Weather station or data source label, e.g. 'KSFO' or 'NOAA-GHCN-USW00023234'. */
+		station: text('station').notNull(),
+		/** Calendar month, as YYYY-MM-01. */
+		period: date('period').notNull(),
+		baseTempF: numeric('base_temp_f', { precision: 5, scale: 2 }).notNull().default('65'),
+		hdd: numeric('hdd', { precision: 10, scale: 2 }).notNull(),
+		cdd: numeric('cdd', { precision: 10, scale: 2 }).notNull(),
+		source: text('source'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		uniqueIndex('degree_days_station_period_base_idx').on(t.station, t.period, t.baseTempF),
+		index('degree_days_period_idx').on(t.period)
+	]
+);
+
 export type Project = typeof projects.$inferSelect;
 export type EnergyReading = typeof energyReadings.$inferSelect;
+export type DegreeDay = typeof degreeDays.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // Documents & tasks

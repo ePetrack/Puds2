@@ -50,6 +50,20 @@
       "when": 1785244728194,
       "tag": "0006_meter_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785245678511,
+      "tag": "0007_degree_days",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785245738627,
+      "tag": "0008_weather_normalized_method",
+      "breakpoints": true
     }
   ]
 }
