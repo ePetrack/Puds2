@@ -161,6 +161,32 @@ it unit-tests directly (same split as `bill-allocation-math.ts` vs `bill-allocat
 Surfacing this chain in `/analysis` is `ANALYTICS-1`, still open: widening the dataset stops
 the Perspective WASM engine booting, tracked as `ANALYSIS-1`.
 
+## Meter reconciliation
+
+`/reconciliation` compares a master meter against the sum of the submeters beneath it,
+month by month. The gap is unaccounted energy — common-area load, house load, or
+distribution loss — and quantifying it is standard M&V work. Arithmetic lives in
+`reconciliation-math.ts` (pure, no DB); querying and bucketing in `reconciliation.ts`; the
+status vocabulary in `src/lib/schemas/reconciliation.ts` because both sides use it.
+
+Three rules make it something an auditor can rely on:
+
+- **Partial coverage is normal, not an error.** Most portfolios submeter some loads and not
+  others, so a persistent positive gap is the expected state, reported as `unaccounted` and
+  described in terms of coverage. Only the physically impossible direction — submeters
+  totalling more than the master — is treated as a defect (`over_metered`), because that
+  means a mis-parented meter, a double count, or reads outside the master's period.
+- **Missing data is not zero.** A period with no master read yields a null delta and its own
+  status rather than a 100% gap, and is excluded from the span totals: counting its submeter
+  usage would understate the gap against a master that never covered it.
+- **A tolerance band absorbs metering noise**, so small meaningless deltas don't crowd out
+  real ones. It is a query parameter, not a constant, because the defensible band depends on
+  meter class.
+
+Only **direct** children are summed. Walking the whole subtree would double-count any meter
+that is itself submetered — which is exactly the `over_metered` signal the report exists to
+surface, so the depth limit is a correctness rule rather than a simplification.
+
 ## Authentication & authorization
 
 - **better-auth** with email/password; sessions persisted in Postgres (`session` table),

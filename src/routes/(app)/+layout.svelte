@@ -42,6 +42,7 @@
 				{ name: 'Clients', href: '/clients', icon: '🏢' },
 				{ name: 'Connections', href: '/connections', icon: '🔌' },
 				{ name: 'Energy Data', href: '/energy', icon: '⚡' },
+				{ name: 'Reconciliation', href: '/reconciliation', icon: '⚖️' },
 				{ name: 'Analysis', href: '/analysis', icon: '📈' },
 				{ name: 'Projects', href: '/projects', icon: '📋' },
 				{ name: 'Tasks', href: '/tasks', icon: '✅' },
