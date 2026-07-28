@@ -7,7 +7,8 @@ export const ALLOCATION_METHODS = [
 	'occupancy',
 	'equal',
 	'fixed_percentage',
-	'hybrid'
+	'hybrid',
+	'weather_normalized'
 ] as const;
 
 /** Operator-facing description of what each method splits on and when to reach for it. */
@@ -43,6 +44,11 @@ export const ALLOCATION_METHOD_INFO: Record<
 		label: 'Submetered, remainder by area',
 		description:
 			'Submetered where a submeter exists; the unaccounted remainder is still shown separately for review.'
+	},
+	weather_normalized: {
+		label: 'Weather-normalised',
+		description:
+			'Each building’s expected usage for the period from its own degree-day model, so a heating-sensitive building isn’t over-charged in a mild month. Needs 12+ months of readings and matching degree days; falls back to area, with a warning, where it can’t be fitted.'
 	}
 };
 

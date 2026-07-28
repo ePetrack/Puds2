@@ -35,8 +35,11 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Navigation rework         | Task-oriented sidebar, `/facilities` hub, `/plants` placeholder, 13 nav e2e tests                                                  | #5  |
 | Docs & backlog            | `TODO.md`, `CLAUDE.md`, ARCHITECTURE decisions (complex cardinality, plants, Complex ≠ District)                                   | #6  |
 | Connections & allocation  | `/connections` relationship review with a gaps panel; per-component bill allocation with preview, remainder line and persisted run | #8  |
+| Meter chain               | `meter-chain.ts` — ownership + revenue-meter resolution walking `parent_meter_id`, shared with `/connections`                      | #9  |
+| Reconciliation            | `/reconciliation` — master vs submeters per period, partial coverage reported not faulted, missing reads excluded from totals      | #10 |
+| Meter ownership           | `meters.ownership` recorded rather than inferred; ownership and billing separated; unrecorded ownership surfaced as a gap          | #10 |
 
-**Current gate:** lint + typecheck clean · 100 Vitest · 40 Playwright.
+**Current gate:** lint + typecheck clean · 132 Vitest · 44 Playwright.
 
 ---
 
@@ -79,17 +82,18 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   complex master meter — which has no building — landed in the dataset with no building
   **and no client**. The seed creates readings for every meter, so those rows were already
   there, silently unattributed.
-- **resolved axis:** attribution runs **meter → meter**, not premise → premise. A
-  utility-owned revenue meter feeds internally-owned meters, and `parent_meter_id` is that
-  link. Campus and complex are context (where a row sits), not the attribution mechanism.
-- **shipped:** `meter-chain.ts` — pure `deriveOwnership` + `resolveChain` + `chainResolver`,
-  walking `parent_meter_id` to the nearest utility-owned ancestor, memoised and
-  cycle-guarded, with 10 unit tests. `/connections` now imports `deriveOwnership` instead of
-  inlining it, so `METER-1` has one call site to delete rather than several.
+- **resolved axis:** attribution runs **meter → meter**, not premise → premise. A revenue
+  meter feeds the meters downstream of it, and `parent_meter_id` is that link. Campus and
+  complex are context (where a row sits), not the attribution mechanism.
+- **shipped:** `meter-chain.ts` — pure `resolveChain` + `chainResolver`, walking
+  `parent_meter_id` to the nearest billed ancestor, memoised and cycle-guarded. (It also
+  carried the interim `deriveOwnership` heuristic, which `METER-1` has since removed in
+  favour of the recorded `meters.ownership` column.)
 - **not shipped:** the dataset widening itself. It was written and its 11 service tests
-  passed, but it stops `/analysis` booting — see `ANALYSIS-1`, which records the exact
-  columns and joins so this can be rebuilt once that is understood. Reverted rather than
-  merged, because the page renders an error state with it in place.
+  passed, but it makes the pre-existing `ANALYSIS-1` boot failure reliable rather than
+  occasional, so `/analysis` renders an error state with it in place. Reverted rather than
+  merged. `ANALYSIS-1` records the exact columns, joins and resolution rules for the rebuild
+  — including the complex-client fallback, which is a real bug fix in its own right.
 - **not done, deliberately:** no per-building cost derived from a master bill. The audited
   allocation from PR #8 is the only sanctioned split; a live one in the reporting layer
   could disagree with the saved run. Feeding `bill_allocation_lines` in is a later step.
@@ -102,95 +106,78 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 
 ### ANALYTICS-2 — Master-vs-submeter reconciliation
 
+- **status:** done
+- **priority:** P1
+- **effort:** M
+- **blocked_by:** none
+- **files:** `src/lib/server/services/reconciliation-math.ts`,
+  `src/lib/server/services/reconciliation.ts`, `src/lib/schemas/reconciliation.ts`,
+  `src/routes/(app)/reconciliation/`
+- **why:** `meters.parent_meter_id` exists, so a master meter can be compared against the
+  sum of its submeters for the same period — surfacing unaccounted energy and line loss.
+  Standard M&V work that consultants bill for.
+- **shipped:** `/reconciliation` — pick a master, a window and a tolerance; get master
+  total, submeter total, delta and delta % per month plus a span summary, with each period
+  classified and every status explained on screen.
+- **decisions worth keeping:**
+  - **Partial coverage is reported, not faulted.** A steady positive gap is the normal state
+    where some loads are unmetered; only submeters exceeding the master (`over_metered`) is
+    treated as a defect, since that is physically impossible and always means a data error.
+  - **Missing master reads yield a null delta**, not a 100% gap, and are excluded from the
+    span totals — counting their submeter usage would understate the real gap.
+  - **Only direct children are summed.** Walking the subtree would double-count a submetered
+    submeter, which is the very signal the report exists to surface.
+  - Tolerance is a request parameter, not a constant, because the defensible band depends on
+    meter class.
+- **acceptance:**
+  - [x] per-period view: master total, sum of submeters, delta, delta %
+  - [x] handles partial coverage (not every load submetered) without implying error
+  - [x] unit tests for a master with 0, 1, and several submeters
+
+### ANALYSIS-1 — the Perspective engine fails to boot after any earlier page load
+
 - **status:** todo
 - **priority:** P1
 - **effort:** M
-- **blocked_by:** none — `meter-chain.ts` shipped, which was the prerequisite
-- **files:** `src/lib/server/services/meters.ts` (`listSubmeters`),
-  `src/lib/server/services/energy-readings.ts`, `src/routes/(app)/analysis/`
-- **why:** `meters.parent_meter_id` now exists, so a complex master meter can be compared
-  against the sum of its submeters for the same period — surfacing unaccounted energy and
-  line loss. Standard M&V work that consultants bill for; newly possible and not yet built.
-- **reuse:** two pieces already exist — don't reimplement either.
-  - `src/lib/server/services/bill-allocation-math.ts` computes the master-minus-submeters
-    shortfall as an explicit remainder line. This item is the per-period _view_ over it.
-  - `src/lib/server/services/meter-chain.ts` (`resolveChain`) already groups a meter under
-    the revenue meter that bills it, which is exactly the pairing this reconciliation needs.
-- **acceptance:**
-  - [ ] per-period view: master total, sum of submeters, delta, delta %
-  - [ ] handles partial coverage (not every load submetered) without implying error
-  - [ ] unit tests for a master with 0, 1, and several submeters
-
-### ANALYSIS-1 — widening the analysis dataset stops the Perspective engine booting
-
-- **status:** blocked — root cause not isolated
-- **priority:** P0 (blocks finishing `ANALYTICS-1`)
-- **effort:** M
 - **blocked_by:** none
-- **files:** `src/lib/components/PerspectiveViewer.svelte`,
-  `src/lib/server/services/analysis.ts`, `vite.config.ts`
-- **why:** With the `ANALYTICS-1` columns added to `getAnalysisDataset()`, `/analysis`
-  renders the component's error state — `Missing perspective-client.wasm` — instead of the
-  viewer. Bisected against the PR #8 merge commit: **clean passes 3/3, the widened dataset
-  fails 4/4.** So it is caused by this change, not pre-existing.
-- **what makes no sense yet, and is the crux:** the error is thrown by
-  `perspective.worker()`, which runs **before** any data reaches the engine —
-  `@finos/perspective` reads its client WASM off the registered `<perspective-viewer>`
-  element (`customElements.get("perspective-viewer")`, else throw) and that element is
-  never defined on the failing path. A server-side query change should not be able to
-  affect that. The most plausible remaining explanation is that the larger SSR payload
-  shifts main-thread timing enough to starve the viewer module's async init, but that is
-  unproven and the numbers look too small for it.
-- **ruled out:**
-  - Column count — trimming from 7 new columns to 5 (dropping `premise`/`premise_type`)
-    still fails 4/4.
-  - The preset changes — reverting `analysis/+page.svelte` to its original presets while
-    keeping the new dataset still fails 3/3.
-  - Any external fetch — a request log over a full `/analysis` load shows **zero**
-    non-localhost requests, so this is not a blocked CDN.
+- **files:** `src/lib/components/PerspectiveViewer.svelte`, `vite.config.ts`
+- **why:** `/analysis` intermittently renders the component's error state — `Missing
+perspective-client.wasm` — instead of the viewer. **This is pre-existing and reproduces on
+  the default branch**, which an earlier writeup of this item got wrong in both directions;
+  the evidence below is what actually holds.
+- **reproduction, on a clean checkout of the default branch:** run a trivial warm-up test
+  (sign in, visit any page), then load `/analysis` in a second Playwright test in the same
+  browser process. `customElements.get('perspective-viewer')` is **`false` eight seconds
+  later**, with **no console output, no page error and no failed request** — the viewer
+  module loads and silently never calls `customElements.define`. `@finos/perspective` then
+  reads its client WASM off that element, finds nothing, and throws.
+- **ruled out, with evidence:**
+  - **Memory** — 16 GB total, 14 GB free at the time of failure.
+  - **SSR payload size** — moving the whole dataset out of the page and behind a
+    `/analysis/data` endpoint changed nothing.
+  - **The dataset shape** — bisected column group by column group; campus/complex, the meter
+    chain columns and the complex-client fallback each pass in isolation.
+  - **An external fetch** — a full request log over `/analysis` shows zero non-localhost
+    requests, so no CDN is involved.
+- **why it looked like a code bug:** widening the dataset shifts timing enough that the
+  latent failure becomes reliable rather than occasional, so a bisect against the widening
+  incriminates it. It is a trigger, not the cause.
 - **what did NOT work** (tried and reverted; don't repeat):
-  - `await customElements.whenDefined('perspective-viewer')` — the element is never defined
-    on the failing path, so this converts a fast error into a hang. 5/5 fail.
-  - Explicit `init_server` / `init_client` with `?url` WASM imports. This _does_ make Vite
-    emit `perspective-server.wasm`, `perspective-js.wasm` and `perspective-viewer.wasm` as
-    build assets (they are otherwise absent, and all three then serve 200) and the element
-    _does_ register — but the engine then traps on `unreachable` inside the WASM with no JS
-    frames. Some init ordering or argument shape is still wrong.
-- **next things to try:** bisect the dataset field-by-field rather than in groups, to find
-  whether one specific column triggers it; pin the official bundler recipe for
-  `@finos/perspective` 3.8 rather than inferring it from `.d.ts`; try
-  `optimizeDeps.exclude` for the perspective packages; and try streaming the dataset from
-  an endpoint instead of the SSR payload, which would settle the timing theory.
-- **the reverted change, so it can be rebuilt** — in `getAnalysisDataset()`:
-  - Five fields added to `AnalysisRecord`: `campus`, `complex`, `meter_ownership`,
-    `parent_meter`, `revenue_meter`. The last three come from
-    `chainResolver(metersById)(row.meterId)`, fed by a third query in the existing
-    `Promise.all` selecting `id, meter_number, parent_meter_id, account_id` from `meters`.
-  - Four Drizzle `alias()` joins, because a meter's premise is a building XOR a complex and
-    both client and campus therefore have two routes: `building_campus`
-    (`buildings.campus_id`), `complex_campus` (`complexes.campus_id`), `building_complex`
-    (`buildings.complex_id`), and `complex_client` (`complexes.client_id`).
-  - Resolution: `campus = buildingCampus ?? complexCampus`,
-    `complex = complexName ?? buildingComplexName`, and on readings
-    `client = clientName ?? complexClientName`.
-  - **That last fallback is a real bug fix worth keeping when this is rebuilt.** Readings
-    join the client via `buildings.client_id`, so a complex master meter — which has no
-    building — currently lands in the dataset with no building _and no client_. The seed
-    creates readings for every meter, so those rows are already there, unattributed.
-  - Presets added to `analysis/+page.svelte`: **Cost by Campus** (`group_by: ['campus']`,
-    split by utility type, sum of cost, filtered to bills) and **Revenue Meter vs
-    Submeters** (`group_by: ['revenue_meter', 'meter_number']`, split by `meter_ownership`,
-    sum of usage, filtered to readings).
-  - `tests/unit/analysis.service.test.ts` covered all of the above and passed (11 tests);
-    it was removed with the revert and should come back with it.
+  - `await customElements.whenDefined('perspective-viewer')` — the element genuinely never
+    defines on the failing path, so this turns a fast error into a hang.
+  - Explicit `init_client`/`init_server` with `?url` WASM imports. This _does_ make Vite emit
+    `perspective-server.wasm`, `perspective-js.wasm` and `perspective-viewer.wasm` as build
+    assets (they are otherwise absent, and then serve 200) and the element _does_ register —
+    but the engine then traps on `unreachable` inside the WASM with no JS frames.
+- **next thing to try:** the explicit-init path is the most promising, since it is the only
+  approach that got the element registered. Pin the official bundler recipe for
+  `@finos/perspective` 3.8 rather than inferring argument order from `.d.ts`, and try
+  `optimizeDeps.exclude` for the perspective packages. Failing that, upgrading the three
+  perspective packages together is cheap to test.
 - **acceptance:**
-  - [ ] `/analysis` renders the viewer with the widened dataset, repeatably
-  - [ ] the cause is understood and written down, not worked around by chance
+  - [ ] `/analysis` renders the viewer after an earlier page load in the same browser
+  - [ ] a second e2e loading `/analysis` in a fresh context passes repeatedly
   - [ ] the WASM binaries are build assets rather than resolved implicitly
-- **acceptance:**
-  - [ ] `/analysis` renders the viewer on every load, not just the first
-  - [ ] a second e2e test loading `/analysis` in a fresh context passes repeatedly
-  - [ ] the WASM binaries are build assets, not fetched from anywhere external
 
 ### QOL-1 — Extract the duplicated list-page shell
 
@@ -344,49 +331,69 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 
 ### METER-1 — Record meter ownership instead of deriving it
 
-- **status:** todo
+- **status:** done
 - **priority:** P2
 - **effort:** S
 - **blocked_by:** none
-- **files:** `src/lib/server/db/schema.ts`, `src/lib/schemas/utility.ts`,
-  `src/routes/(app)/utilities/meters/`, `src/routes/(app)/connections/+page.server.ts`
-- **why:** `/connections` splits meters into utility-owned and internally-owned, but
-  `meters` has **no ownership column**. The page derives it from `account_id` — a meter
-  billed under a utility account is treated as the utility's revenue meter, one without as
-  the client's own. That heuristic is right most of the time and wrong in two real cases: a
-  client-owned meter the utility happens to bill against, and a utility meter not yet
-  linked to an account. The page says on screen that the split is derived; that is a
-  disclosure, not a fix.
-- **approach:** a `meter_ownership` pgEnum (`utility` | `client` | `unknown`) with a
-  `meters.ownership` column defaulting to `unknown`; backfill from `account_id` in the
-  migration to preserve what the current UI shows. Then `/connections` groups on the column
-  and drops the derivation notice.
+- **files:** `src/lib/server/db/schema.ts`, `drizzle/0006_meter_ownership.sql`,
+  `src/lib/schemas/utility.ts`, `src/lib/components/utilities/MeterForm.svelte`,
+  `src/routes/(app)/connections/+page.server.ts`,
+  `src/lib/server/services/meter-chain.ts`
+- **why:** `/connections` split meters into utility- and internally-owned by asking whether
+  an `account_id` was attached. That heuristic is wrong in two real cases — a client-owned
+  meter the utility bills against, and a utility meter not yet linked to an account — and it
+  conflated two different facts.
+- **shipped:** `meter_ownership` enum (`utility` | `client` | `unknown`) and
+  `meters.ownership`, exposed on the meter form, grouped on by `/connections`, and seeded
+  explicitly. The old `deriveOwnership` helper is gone.
+- **the split that mattered:** ownership (who owns the hardware) and billing (which meter
+  carries the account) are now separate. `meter-chain.ts` no longer speaks about ownership
+  at all — it reports `billed` and the `revenueMeterNumber`, which is a billing question.
+- **the backfill decision:** only the half the data supports. Meters **with** an account
+  become `utility`; the rest stay `unknown` rather than becoming `client`. "No account
+  linked" is equally consistent with a utility meter nobody has attached yet, so recording
+  it as client-owned would promote a guess to a fact — the exact problem this item exists to
+  remove. `unknown` surfaces on `/connections` as a gap to fill.
 - **acceptance:**
-  - [ ] `meters.ownership` column + migration with an `account_id`-based backfill
-  - [ ] meter create/edit form exposes it
-  - [ ] `/connections` groups on the column; the "derived, not recorded" banner is removed
-  - [ ] unit test covering a client-owned meter that still bills to a utility account
+  - [x] `meters.ownership` column + migration with an `account_id`-based backfill
+  - [x] meter create/edit form exposes it
+  - [x] `/connections` groups on the column; the "derived, not recorded" banner is removed
+  - [x] unit test covering a client-owned meter with no account, and the `unknown` default
 
-### ALLOC-1 — Weather-normalised and EnPI-based allocation
+### ALLOC-1 — Weather-normalised allocation
 
-- **status:** todo
+- **status:** done
 - **priority:** P3
 - **effort:** M
 - **blocked_by:** none
-- **files:** `src/lib/server/services/bill-allocation-math.ts`,
-  `src/lib/server/services/bill-allocation.ts`
-- **why:** The shipped methods split on a static or measured basis — submetered usage,
-  area, occupancy, equal, fixed percentage, hybrid. They do not adjust for the fact that
-  buildings in one complex have different weather sensitivity, so on an extreme month an
-  area split over-charges a well-insulated building. A refinement, not a defect: IPMVP
-  routine adjustments (HDD/CDD regression, or change-point models per building) would let
-  the basis itself be weather-normalised.
-- **note:** only worth building once `ANALYTICS-2` exists — a normalised split needs the
-  same per-building regression that reconciliation does.
+- **files:** `src/lib/server/services/regression.ts`,
+  `src/lib/server/services/weather-normalization.ts`,
+  `src/lib/server/services/bill-allocation.ts`, `drizzle/0007_degree_days.sql`,
+  `drizzle/0008_weather_normalized_method.sql`
+- **why:** The other methods split on a static or measured basis and ignore that buildings
+  in one complex have different weather sensitivity, so on an extreme month an area split
+  over-charges the well-insulated building for its neighbour's heat.
+- **shipped:** a `weather_normalized` method that fits each building's own consumption
+  against degree days (`usage = intercept + βh·HDD + βc·CDD`) and splits on predicted usage
+  for the bill period. `regression.ts` is a pure OLS with R², CV(RMSE) and NMBE;
+  `degree_days` stores the weather series.
+- **decisions worth keeping:**
+  - **A model that doesn't fit isn't used.** Under 12 months of history, no matching degree
+    days, or ASHRAE Guideline 14 statistics outside threshold, and the building gets no
+    normalised basis with the reason recorded against it.
+  - **Degree days are stored, not fetched.** An air-gapped federal or hospital deployment
+    can't call a weather API, and an allocation isn't reproducible if its weather inputs are
+    re-fetched from a service that may have revised them.
+  - **Fall back, don't fail.** With nothing normalisable the bill is split by area and both
+    the warnings and the `basis` record `requestedMethod` vs `appliedMethod`.
+- **still worth doing:** there is no UI for entering or importing degree days — the seed
+  creates a synthetic series and the table is otherwise populated by hand. A CSV import
+  matching the existing bill importer is the obvious next step. Change-point (3P/5P) models
+  would also beat a fixed 65°F base, since the balance point is properly a fitted parameter.
 - **acceptance:**
-  - [ ] a method that normalises the basis against degree days for the bill period
-  - [ ] the persisted `basis` snapshot records the weather source and model fit
-  - [ ] falls back to the un-normalised basis, with a warning, when data is insufficient
+  - [x] a method that normalises the basis against degree days for the bill period
+  - [x] the persisted `basis` snapshot records the weather source and model fit
+  - [x] falls back to the un-normalised basis, with a warning, when data is insufficient
 
 ### UI-1 — Visual pass against the Figma comp
 

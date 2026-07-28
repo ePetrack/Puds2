@@ -19,7 +19,8 @@ export const ALLOCATION_METHODS = [
 	'occupancy',
 	'equal',
 	'fixed_percentage',
-	'hybrid'
+	'hybrid',
+	'weather_normalized'
 ] as const;
 
 export type AllocationMethod = (typeof ALLOCATION_METHODS)[number];
@@ -34,6 +35,12 @@ export interface AllocationTarget {
 	occupancy?: number | null;
 	/** Operator-supplied percentage, only for `fixed_percentage`. */
 	fixedPct?: number;
+	/**
+	 * Expected usage for the bill period from this building's own degree-day model, for
+	 * `weather_normalized`. Supplied by the caller because fitting it needs the database;
+	 * this module stays pure.
+	 */
+	normalizedUsage?: number;
 }
 
 /** The charge components being split, taken from the bill. */
@@ -95,6 +102,8 @@ function basisFor(method: AllocationMethod, t: AllocationTarget): number {
 			return 1;
 		case 'fixed_percentage':
 			return t.fixedPct ?? 0;
+		case 'weather_normalized':
+			return t.normalizedUsage ?? 0;
 	}
 }
 
@@ -104,7 +113,8 @@ export const BASIS_LABEL: Record<AllocationMethod, string> = {
 	occupancy: 'Occupancy',
 	equal: 'Equal share',
 	fixed_percentage: 'Fixed %',
-	hybrid: 'Submetered usage (remainder by area)'
+	hybrid: 'Submetered usage (remainder by area)',
+	weather_normalized: 'Weather-normalised expected usage'
 };
 
 /**

@@ -1,0 +1,96 @@
+# LLM-README
+
+**Read this before doing anything else.** It exists because the traps below have each cost a
+previous session real time. Everything here is non-obvious and verified.
+
+## Which file to read
+
+Don't read them all. Pick one:
+
+| Need                                | File                                           |
+| ----------------------------------- | ---------------------------------------------- |
+| Conventions, commands, domain rules | `CLAUDE.md`                                    |
+| Why the design is what it is        | `ARCHITECTURE.md`                              |
+| What's left, and what's been tried  | `TODO.md` — check `blocked_by` before starting |
+| Environment traps                   | this file                                      |
+
+`TODO.md` items record failed approaches under **"what did NOT work"**. Read that before
+attempting an item; it is there specifically so you don't repeat a dead end.
+
+## Environment bring-up
+
+Nothing is running when a session starts. In order:
+
+```bash
+pg_ctlcluster 16 main start          # Postgres is NOT running; no error message says so
+set -a; source .env; set +a          # npm run dev/build do NOT load .env — see ENV-1
+```
+
+If the databases are missing:
+
+```bash
+su postgres -c "psql -c \"CREATE ROLE puds LOGIN PASSWORD 'puds' SUPERUSER\""
+su postgres -c "createdb -O puds puds_dev && createdb -O puds puds_test"
+npm run db:migrate                                                  # puds_dev
+DATABASE_URL="postgres://puds:puds@localhost:5432/puds_test" npm run db:migrate
+npm run db:seed
+```
+
+**Postgres dies when the container is reclaimed.** A wall of `ECONNREFUSED 127.0.0.1:5432`
+in Vitest means restart it, not that you broke something.
+
+E2E needs a browser path:
+
+```bash
+PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npx playwright test
+```
+
+## Traps that have already cost time
+
+- **`svelte-check` does not catch `$lib/server` leaking into the browser — the build does.**
+  Importing a server module (even for a constant) into a `.svelte` file typechecks fine and
+  then fails `npm run build`. Shared client/server values belong in `src/lib/schemas/`.
+- **A Zod `.default()` makes the field _required_ on the inferred input type**, so every
+  hand-constructed fixture must supply it. Use `.optional()` and default in the service.
+- **Use Drizzle's `inArray`, not `` sql`x = any(${array})` ``** — the raw form binds the
+  array as a scalar and Postgres rejects it with `malformed array literal`.
+- **Adding a value to an existing `pgEnum` needs its own migration** (`ALTER TYPE … ADD
+VALUE`); it can't share a file with a table creation.
+- **`db:generate` invents random migration names.** Rename the file and update the matching
+  `tag` in `drizzle/meta/_journal.json`, or the migration won't be found.
+- **Don't pipe a check through `tail`** — it masks the exit code and a failing gate looks
+  green.
+- **E2E writes into `puds_dev`** (`TEST-1`). Re-seed before any full run, or leftover `E2E …`
+  rows break tests that assume seeded data:
+  `su postgres -c "dropdb --if-exists puds_dev && createdb -O puds puds_dev" && npm run db:migrate && npm run db:seed`
+
+## Known-flaky — do not investigate from scratch
+
+- **`/analysis` Perspective boot (`ANALYSIS-1`).** The `<perspective-viewer>` element
+  silently never registers after any earlier page load in the same browser process. It
+  **reproduces on the default branch**, and memory, SSR payload size, the dataset shape and
+  external fetches are all ruled out **with evidence** in `TODO.md`. Two previous sessions
+  misdiagnosed it — once as caused by a code change it did not cause. Read the item, don't
+  re-bisect. Widening the analysis dataset makes it reliable rather than occasional, which
+  is why a naive bisect will incriminate the wrong thing.
+
+## Gate and shipping
+
+```bash
+npm run lint && npm run check && npm test && npm run test:e2e
+```
+
+- Work branch is in `TODO.md`. **The default branch is not `main`.**
+- **Merged PRs are never reused.** Restart the branch from the current default and open a
+  new PR. An unmerged PR can take more commits.
+- Every mutation writes `audit_log` in the same transaction (`recordAudit` + `diffRecords`).
+
+## Two habits this codebase expects
+
+- **Pure logic is split from persistence** so it unit-tests without a database:
+  `bill-allocation-math.ts`, `reconciliation-math.ts`, `regression.ts`, `meter-chain.ts`.
+  Put new arithmetic in that shape.
+- **Missing data is never silently zero.** Absent readings, unrecorded ownership and
+  unfittable models all surface as an explicit state with a reason, because a number that
+  quietly assumes zero is how an energy report ends up asserting something untrue. If you
+  find yourself defaulting a missing input, make it a typed error or a reported gap instead.

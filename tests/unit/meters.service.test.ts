@@ -67,6 +67,33 @@ describe('meter premise (building XOR complex)', () => {
 	});
 });
 
+describe('meter ownership (METER-1)', () => {
+	it('defaults to unknown rather than guessing from the account', async () => {
+		const meter = await createMeter(TEST_ACTOR, meterInput({ buildingId, meterNumber: 'O-1' }));
+		expect(meter.ownership).toBe('unknown');
+	});
+
+	it('records ownership independently of whether an account is attached', async () => {
+		// The case the old accountId heuristic got wrong: client hardware the utility bills.
+		const meter = await createMeter(
+			TEST_ACTOR,
+			meterInput({ buildingId, meterNumber: 'O-2', ownership: 'client' })
+		);
+		expect(meter.ownership).toBe('client');
+		expect(meter.accountId).toBeNull();
+	});
+
+	it('updates ownership like any other field', async () => {
+		const meter = await createMeter(TEST_ACTOR, meterInput({ buildingId, meterNumber: 'O-3' }));
+		const updated = await updateMeter(
+			TEST_ACTOR,
+			meter.id,
+			meterInput({ buildingId, meterNumber: 'O-3', ownership: 'utility' })
+		);
+		expect(updated!.ownership).toBe('utility');
+	});
+});
+
 describe('meter submeters (parent link)', () => {
 	it('links a submeter and derives isSubmeter, then lists it', async () => {
 		const master = await createMeter(TEST_ACTOR, meterInput({ complexId, meterNumber: 'MASTER' }));
