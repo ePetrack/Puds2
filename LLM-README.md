@@ -24,7 +24,11 @@ Nothing is running when a session starts. In order:
 ```bash
 pg_ctlcluster 16 main start          # Postgres is NOT running; no error message says so
 set -a; source .env; set +a          # npm run dev/build do NOT load .env — see ENV-1
+npm run db:migrate                   # only safe skip is if you know nothing new landed
 ```
+
+`pg_ctlcluster` is Debian-specific — that is the **container**. On macOS the equivalent is
+`brew services start postgresql@16`.
 
 If the databases are missing:
 
@@ -50,8 +54,15 @@ PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npx 
 - **`svelte-check` does not catch `$lib/server` leaking into the browser — the build does.**
   Importing a server module (even for a constant) into a `.svelte` file typechecks fine and
   then fails `npm run build`. Shared client/server values belong in `src/lib/schemas/`.
+- **A stale local database shows up as a 500, not as a migration warning.** Nothing checks
+  for pending migrations at boot, so a missing table surfaces as
+  `Failed query: select … from "bill_allocations"` from whichever service touches it first.
+  Run `npm run db:migrate` after every pull.
 - **A Zod `.default()` makes the field _required_ on the inferred input type**, so every
   hand-constructed fixture must supply it. Use `.optional()` and default in the service.
+- **`z.coerce.number()` turns `''` into `0`.** On a CSV import that silently converts a blank
+  cell into a real-looking measurement. Preprocess blanks to `undefined` first — see
+  `requiredNumber` in `src/lib/schemas/degree-days.ts`.
 - **Use Drizzle's `inArray`, not `` sql`x = any(${array})` ``** — the raw form binds the
   array as a scalar and Postgres rejects it with `malformed array literal`.
 - **Adding a value to an existing `pgEnum` needs its own migration** (`ALTER TYPE … ADD

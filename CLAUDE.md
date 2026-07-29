@@ -133,7 +133,9 @@ fails ASHRAE Guideline 14 or has under 12 months of history is **not used** — 
 gets no basis and the reason is recorded. With nothing normalisable the bill falls back to
 an area split, and `basis` records `requestedMethod` vs `appliedMethod`. Degree days are
 stored (`degree_days`), never fetched at runtime: air-gapped sites can't call a weather API
-and a re-fetched series would break reproducibility. There is no import UI yet.
+and a re-fetched series would break reproducibility. Import them at `/energy/degree-days`; rows
+upsert on `(station, period, base_temp_f)` so a revised series replaces rather than
+duplicates, and the run writes **one** audit row, not one per month.
 
 **Reconciliation** (`/reconciliation`) compares a master meter against its **direct**
 submeters per period. Partial coverage is normal and reported as `unaccounted`, not an

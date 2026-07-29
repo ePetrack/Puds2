@@ -23,6 +23,14 @@ export function formatDateShort(value?: string | null): string {
 	return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/** "2026-07-01" → "Jul 2026". For month buckets, where a day-of-month would be noise. */
+export function formatMonthYear(value?: string | null): string {
+	if (!value) return '-';
+	const date = new Date(value.slice(0, 7) + '-01T00:00:00');
+	if (isNaN(date.getTime())) return '-';
+	return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+}
+
 /** "2026-07" → "Jul" */
 export function formatMonthLabel(yearMonth: string): string {
 	const date = new Date(yearMonth + '-01T00:00:00');

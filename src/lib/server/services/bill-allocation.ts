@@ -12,6 +12,7 @@ import {
 } from '../db/schema';
 import { recordAudit, diffRecords } from './audit';
 import { normalizeBuildings, type NormalizationResult } from './weather-normalization';
+import { listStationCoverage, type StationCoverage } from './degree-days';
 import {
 	allocateBill,
 	AllocationError,
@@ -117,6 +118,12 @@ export interface AllocationContext {
 	reason?: string;
 	targets: AllocationTarget[];
 	warnings: string[];
+	/**
+	 * What weather is on hand, so the operator can see whether `weather_normalized` has
+	 * anything to work with *before* running it. Otherwise the only signal that the method
+	 * silently fell back to an area split is a line of warning text after the fact.
+	 */
+	weatherCoverage: StationCoverage[];
 }
 
 /**
@@ -124,12 +131,19 @@ export interface AllocationContext {
  * the caller having to catch `AllocationError` just to render a disabled panel.
  */
 export async function allocationContext(billId: string): Promise<AllocationContext> {
+	const weatherCoverage = await listStationCoverage();
 	try {
 		const { targets, warnings } = await buildTargets(billId);
-		return { available: true, targets, warnings };
+		return { available: true, targets, warnings, weatherCoverage };
 	} catch (err) {
 		if (err instanceof AllocationError) {
-			return { available: false, reason: err.message, targets: [], warnings: [] };
+			return {
+				available: false,
+				reason: err.message,
+				targets: [],
+				warnings: [],
+				weatherCoverage
+			};
 		}
 		throw err;
 	}

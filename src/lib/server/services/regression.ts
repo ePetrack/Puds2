@@ -20,8 +20,12 @@
 export const G14_MONTHLY_CV_RMSE_MAX = 15;
 export const G14_MONTHLY_NMBE_MAX = 5;
 
-/** The minimum ASHRAE and IPMVP both expect for an annual baseline. */
-export const MIN_BASELINE_POINTS = 12;
+/**
+ * The minimum ASHRAE and IPMVP both expect for an annual baseline. Defined in
+ * `$lib/schemas` because the degree-day UI has to state the same number, and a `$lib/server`
+ * import from a `.svelte` file typechecks but fails the build.
+ */
+export { MIN_BASELINE_MONTHS as MIN_BASELINE_POINTS } from '$lib/schemas/degree-days';
 
 export interface RegressionPoint {
 	/** Predictor values, in a consistent order across points. */

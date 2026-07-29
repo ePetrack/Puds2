@@ -39,6 +39,7 @@
 			<p class="text-gray-600 dark:text-gray-400">Meter readings and consumption trends</p>
 		</div>
 		<div class="flex gap-3">
+			<a href="/energy/degree-days" class="btn btn-secondary">Degree Days</a>
 			<a href="/energy/import" class="btn btn-secondary">Import CSV</a>
 			<a href="/energy/new" class="btn btn-primary">+ Add Reading</a>
 		</div>

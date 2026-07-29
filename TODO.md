@@ -38,8 +38,9 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Meter chain               | `meter-chain.ts` — ownership + revenue-meter resolution walking `parent_meter_id`, shared with `/connections`                      | #9  |
 | Reconciliation            | `/reconciliation` — master vs submeters per period, partial coverage reported not faulted, missing reads excluded from totals      | #10 |
 | Meter ownership           | `meters.ownership` recorded rather than inferred; ownership and billing separated; unrecorded ownership surfaced as a gap          | #10 |
+| Degree-day import         | `/energy/degree-days` — CSV import that upserts a revised series, coverage panel on the allocation form, one audit row per run     | #11 |
 
-**Current gate:** lint + typecheck clean · 132 Vitest · 44 Playwright.
+**Current gate:** lint + typecheck clean · 170 Vitest · 49 Playwright.
 
 ---
 
@@ -386,14 +387,73 @@ perspective-client.wasm` — instead of the viewer. **This is pre-existing and r
     re-fetched from a service that may have revised them.
   - **Fall back, don't fail.** With nothing normalisable the bill is split by area and both
     the warnings and the `basis` record `requestedMethod` vs `appliedMethod`.
-- **still worth doing:** there is no UI for entering or importing degree days — the seed
-  creates a synthetic series and the table is otherwise populated by hand. A CSV import
-  matching the existing bill importer is the obvious next step. Change-point (3P/5P) models
-  would also beat a fixed 65°F base, since the balance point is properly a fitted parameter.
+- **followed up by:** `WEATHER-1` (the CSV import, shipped) and `ALLOC-2` (change-point
+  models, still open).
 - **acceptance:**
   - [x] a method that normalises the basis against degree days for the bill period
   - [x] the persisted `basis` snapshot records the weather source and model fit
   - [x] falls back to the un-normalised basis, with a warning, when data is insufficient
+
+### WEATHER-1 — Degree-day CSV import
+
+- **status:** done
+- **priority:** P1
+- **effort:** S
+- **blocked_by:** none
+- **files:** `src/lib/schemas/degree-days.ts`,
+  `src/lib/server/services/degree-days.ts`, `src/routes/(app)/energy/degree-days/`,
+  `src/lib/components/utilities/BillAllocation.svelte`
+- **why:** `weather_normalized` was the most defensible allocation method available and the
+  only way to get weather into the system was `INSERT` by hand, so in practice selecting it
+  produced a silent fall-back to an area split. The method existed but was unreachable.
+- **decisions worth keeping:**
+  - **Rows upsert on `(station, period, base_temp_f)`.** Weather series get revised at
+    source. An insert-only importer would either reject a corrected file wholesale or double
+    the heating load for every month it already had. `inserted` vs `updated` are reported
+    separately so a revision is visible as a revision.
+  - **Base temperature is part of the key, not a setting.** The same month at a 65°F and a
+    60°F base are different series; merging them would make the shares incomparable.
+  - **An absent `base_temp_f` column defaults to 65°F with a notice; a blank cell is an
+    error.** `z.coerce.number()` turns `''` into `0`, and a month with genuinely zero cooling
+    is ordinary — so a blank CDD would have become a real-looking measurement nobody
+    recorded. Caught by a unit test, and the reason `requiredNumber` exists in the schema.
+  - **One audit row per import run, not per month.** Twenty-four rows of weather logged as
+    twenty-four audit entries buries the fact that matters: who replaced which series, when,
+    over what span. The per-series breakdown lives in the `changes` payload.
+  - **Coverage is shown before the split runs.** Picking `weather_normalized` now lists the
+    stored series and month counts, so the operator sees there is nothing to fit against
+    rather than discovering the fall-back from a warning afterwards.
+- **acceptance:**
+  - [x] CSV import mirroring the bill/reading importers, with a downloadable template
+  - [x] re-import replaces rather than duplicates; unit test asserts the row count is stable
+  - [x] one audit row per run, carrying station, span and counts
+  - [x] `/energy/degree-days` lists the series and its coverage
+  - [x] the allocation form states what weather is on hand
+
+### ALLOC-2 — Change-point (3P/5P) baseline models
+
+- **status:** todo
+- **priority:** P3
+- **effort:** M
+- **blocked_by:** none
+- **files:** `src/lib/server/services/regression.ts`,
+  `src/lib/server/services/weather-normalization.ts`
+- **why:** The current model regresses usage on HDD and CDD at a **fixed** 65°F base. The
+  balance point is properly a _fitted_ parameter — the outdoor temperature at which a
+  particular building starts heating or cooling — and it varies with envelope, internal
+  gains and schedule. ASHRAE Guideline 14 and IPMVP both treat change-point models as the
+  standard form for this reason; a fixed base systematically misfits buildings whose real
+  balance point is far from 65°F, and those are exactly the buildings an allocation is most
+  likely to treat unfairly.
+- **approach:** fit 3P (heating- or cooling-only) and 5P forms by searching the balance
+  point, and keep whichever model wins on CV(RMSE) subject to the existing G14 gate. The
+  `fit` recorded in `basis` gains the fitted balance point so the choice is auditable.
+  Degree days would then need to be stored at several bases, or storage moves to mean
+  monthly temperature — decide which before building.
+- **acceptance:**
+  - [ ] 3P/5P fitting with a searched balance point, unit-tested against known coefficients
+  - [ ] model selection recorded in the persisted `basis`, not just the winning coefficients
+  - [ ] existing fixed-base behaviour still available and still passes its tests
 
 ### UI-1 — Visual pass against the Figma comp
 
