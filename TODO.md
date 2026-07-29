@@ -39,8 +39,9 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Reconciliation            | `/reconciliation` — master vs submeters per period, partial coverage reported not faulted, missing reads excluded from totals      | #10 |
 | Meter ownership           | `meters.ownership` recorded rather than inferred; ownership and billing separated; unrecorded ownership surfaced as a gap          | #10 |
 | Degree-day import         | `/energy/degree-days` — CSV import that upserts a revised series, coverage panel on the allocation form, one audit row per run     | #11 |
+| List-page shell           | `listHref` + `Pagination` + `ConfirmDelete` shared across 13 list pages; server `deleteError` now surfaced instead of swallowed    | #11 |
 
-**Current gate:** lint + typecheck clean · 170 Vitest · 49 Playwright.
+**Current gate:** lint + typecheck clean · 175 Vitest · 49 Playwright.
 
 ---
 
@@ -182,33 +183,44 @@ perspective-client.wasm` — instead of the viewer. **This is pre-existing and r
 
 ### QOL-1 — Extract the duplicated list-page shell
 
-- **status:** todo
+- **status:** done
 - **priority:** P1
 - **effort:** M
 - **blocked_by:** none
-- **files:** `src/lib/components/ui/`, and the list pages under `src/routes/(app)/` —
-  `clients`, `buildings`, `campuses`, `complexes`, `projects`, `energy`, `utilities/bills`
+- **files:** `src/lib/utils/pagination.ts`, `src/lib/components/ui/Pagination.svelte`,
+  `src/lib/components/ui/ConfirmDelete.svelte`, and the list pages under `src/routes/(app)/`
 - **why:** Six milestones were each built and shipped independently, so the same list-page
-  scaffolding got copied rather than shared. Measured on the current tree:
-  - `function pageHref` is duplicated verbatim across **7** list pages
-  - the delete-confirm modal + `toast` + `invalidateAll()` block appears in **14** files
-  - ~14k lines of app source are served by only **6** shared components (4 form fields,
-    `Modal`, `Toast`)
+  scaffolding got copied rather than shared. Measured before the change:
+  - `function pageHref` duplicated verbatim across **8** list pages (7 at filing; the
+    degree-day page made it 8, which is the compounding this item is about)
+  - the delete-confirm modal + `toast` + `invalidateAll()` block in **14** files
+  - ~14k lines of app source served by only **6** shared components
 
-  Nothing is broken — this is compounding cost, not a defect. Every new entity currently
-  costs another copy of the same ~150 lines, and a fix to (say) pagination or the delete
-  flow has to be applied 7–14 times.
+  Nothing was broken — this was compounding cost, not a defect.
 
-- **do this before `PLANTS-1`** — plants adds a list page, a form and a detail page, so
-  building it first makes it copy #15 instead of the first consumer of the shared parts.
-- **approach:** extract a `DataTable` / list-page shell (filter form, table, empty state,
-  pagination) and a `ConfirmDelete` component wrapping the modal + toast + invalidate
-  cycle. Keep them dumb and prop-driven; the services and routes don't change.
+- **shipped:**
+  - `listHref(basePath, filters, page)` in `src/lib/utils/pagination.ts` — `pageHref` now
+    exists **zero** times; all eight copies passed the whole `data.filters` object, so one
+    signature covered every caller.
+  - `Pagination.svelte` — the "Page X of Y · Previous / Next" block, which was byte-identical
+    across all eight pages apart from the collection name.
+  - `ConfirmDelete.svelte` — the modal + form + toast + `invalidateAll()` cycle, adopted by
+    13 list pages. The bill detail page's delete and the allocation Remove modal are
+    deliberately left alone: different actions, different payloads, not the list pattern.
+- **one real fix fell out of it:** every delete action already returned
+  `fail(…, { deleteError })`, but **13 of 14** pages discarded it and showed a generic
+  "Failed to delete X". Only `/utilities/providers` surfaced the real reason. The shared
+  component surfaces it everywhere, so "Provider is referenced by utility accounts" now
+  reaches the user instead of being swallowed.
+- **not done, deliberately:** no `DataTable`. The eight tables differ in columns, links,
+  badges and formatters; a prop-driven table covering all of them would be a bigger
+  abstraction than the duplication it removes. The repeated _mechanism_ (paging, delete) is
+  now shared; the repeated _markup_ is left alone until a second consumer justifies it.
 - **acceptance:**
-  - [ ] `pageHref` exists once, not seven times
-  - [ ] delete-confirm flow exists once
-  - [ ] every existing list page uses the shared parts, with no visual change
-  - [ ] `npm test` and `npm run test:e2e` green with no test rewrites (behaviour identical)
+  - [x] `pageHref` exists once, not seven times — it exists zero times
+  - [x] delete-confirm flow exists once
+  - [x] every existing list page uses the shared parts, with no visual change
+  - [x] `npm test` and `npm run test:e2e` green with no test rewrites (behaviour identical)
 
 ### QOL-2 — Whole-codebase review passes
 

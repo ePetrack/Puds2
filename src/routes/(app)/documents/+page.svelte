@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
-	import Modal from '$lib/components/ui/Modal.svelte';
+	import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
 	import FormField from '$lib/components/forms/FormField.svelte';
 	import { toast } from '$lib/stores/toast';
 	import { formatDateShort } from '$lib/utils/format';
@@ -224,31 +224,14 @@
 	</div>
 </div>
 
-<Modal bind:open={deleteModalOpen} title="Delete Document">
+<ConfirmDelete
+	bind:open={deleteModalOpen}
+	title="Delete Document"
+	entity="Document"
+	id={docToDelete?.id}
+>
 	<p class="text-gray-700 dark:text-gray-300">
 		Are you sure you want to delete <strong>{docToDelete?.title}</strong>? The stored file will be
 		removed permanently.
 	</p>
-
-	{#snippet actions()}
-		<button onclick={() => (deleteModalOpen = false)} class="btn btn-secondary">Cancel</button>
-		<form
-			method="POST"
-			action="?/delete"
-			use:enhance={() => {
-				return async ({ result }) => {
-					deleteModalOpen = false;
-					if (result.type === 'success') {
-						toast.success('Document deleted');
-						await invalidateAll();
-					} else {
-						toast.error('Failed to delete document');
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={docToDelete?.id ?? ''} />
-			<button type="submit" class="btn btn-danger">Delete</button>
-		</form>
-	{/snippet}
-</Modal>
+</ConfirmDelete>

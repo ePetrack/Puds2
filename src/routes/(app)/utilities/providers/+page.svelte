@@ -1,9 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
-	import Modal from '$lib/components/ui/Modal.svelte';
+	import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
 	import UtilityNav from '$lib/components/utilities/UtilityNav.svelte';
-	import { toast } from '$lib/stores/toast';
 	import { formatEnumLabel } from '$lib/schemas/utility';
 
 	let { data } = $props();
@@ -130,34 +127,15 @@
 	</div>
 </div>
 
-<Modal bind:open={deleteModalOpen} title="Delete Provider">
+<ConfirmDelete
+	bind:open={deleteModalOpen}
+	title="Delete Provider"
+	entity="Provider"
+	id={providerToDelete?.id}
+>
 	<p class="text-gray-700 dark:text-gray-300">
 		Are you sure you want to delete <strong>{providerToDelete?.name}</strong>? Rate schedules for
 		this provider will also be deleted. Deletion is blocked while utility accounts still reference
 		it.
 	</p>
-
-	{#snippet actions()}
-		<button onclick={() => (deleteModalOpen = false)} class="btn btn-secondary">Cancel</button>
-		<form
-			method="POST"
-			action="?/delete"
-			use:enhance={() => {
-				return async ({ result }) => {
-					deleteModalOpen = false;
-					if (result.type === 'success') {
-						toast.success('Provider deleted');
-						await invalidateAll();
-					} else if (result.type === 'failure' && result.data?.deleteError) {
-						toast.error(String(result.data.deleteError));
-					} else {
-						toast.error('Failed to delete provider');
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={providerToDelete?.id ?? ''} />
-			<button type="submit" class="btn btn-danger">Delete</button>
-		</form>
-	{/snippet}
-</Modal>
+</ConfirmDelete>

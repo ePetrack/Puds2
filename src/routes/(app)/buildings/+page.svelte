@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import { toast } from '$lib/stores/toast';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
+	import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
 
 	let { data } = $props();
 
@@ -17,14 +15,6 @@
 	function typeLabel(value: string | null) {
 		if (!value) return '-';
 		return value.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-	}
-
-	function pageHref(page: number) {
-		const params: string[] = [];
-		if (data.filters.search) params.push(`search=${encodeURIComponent(data.filters.search)}`);
-		if (data.filters.client) params.push(`client=${encodeURIComponent(data.filters.client)}`);
-		if (page > 1) params.push(`page=${page}`);
-		return params.length ? `/buildings?${params.join('&')}` : '/buildings';
 	}
 </script>
 
@@ -171,54 +161,24 @@
 				</table>
 			</div>
 
-			{#if data.buildings.totalPages > 1}
-				<div
-					class="flex items-center justify-between border-t border-gray-200 px-6 py-3 dark:border-gray-700"
-				>
-					<p class="text-sm text-gray-500 dark:text-gray-400">
-						Page {data.buildings.page} of {data.buildings.totalPages}
-					</p>
-					<div class="flex gap-2">
-						{#if data.buildings.page > 1}
-							<a href={pageHref(data.buildings.page - 1)} class="btn btn-secondary text-sm"
-								>Previous</a
-							>
-						{/if}
-						{#if data.buildings.page < data.buildings.totalPages}
-							<a href={pageHref(data.buildings.page + 1)} class="btn btn-secondary text-sm">Next</a>
-						{/if}
-					</div>
-				</div>
-			{/if}
+			<Pagination
+				page={data.buildings.page}
+				totalPages={data.buildings.totalPages}
+				basePath="/buildings"
+				filters={data.filters}
+			/>
 		{/if}
 	</div>
 </div>
 
-<Modal bind:open={deleteModalOpen} title="Delete Building">
+<ConfirmDelete
+	bind:open={deleteModalOpen}
+	title="Delete Building"
+	entity="Building"
+	id={buildingToDelete?.id}
+>
 	<p class="text-gray-700 dark:text-gray-300">
 		Are you sure you want to delete <strong>{buildingToDelete?.name}</strong>? This action cannot be
 		undone.
 	</p>
-
-	{#snippet actions()}
-		<button onclick={() => (deleteModalOpen = false)} class="btn btn-secondary">Cancel</button>
-		<form
-			method="POST"
-			action="?/delete"
-			use:enhance={() => {
-				return async ({ result }) => {
-					deleteModalOpen = false;
-					if (result.type === 'success') {
-						toast.success('Building deleted');
-						await invalidateAll();
-					} else {
-						toast.error('Failed to delete building');
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={buildingToDelete?.id ?? ''} />
-			<button type="submit" class="btn btn-danger">Delete</button>
-		</form>
-	{/snippet}
-</Modal>
+</ConfirmDelete>

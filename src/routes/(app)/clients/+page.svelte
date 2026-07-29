@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import { toast } from '$lib/stores/toast';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
+	import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
 	import { CLIENT_STATUSES } from '$lib/schemas/client';
 
 	let { data } = $props();
@@ -23,14 +21,6 @@
 
 	function statusLabel(status: string) {
 		return status.charAt(0).toUpperCase() + status.slice(1);
-	}
-
-	function pageHref(page: number) {
-		const params: string[] = [];
-		if (data.filters.search) params.push(`search=${encodeURIComponent(data.filters.search)}`);
-		if (data.filters.status) params.push(`status=${encodeURIComponent(data.filters.status)}`);
-		if (page > 1) params.push(`page=${page}`);
-		return params.length ? `/clients?${params.join('&')}` : '/clients';
 	}
 </script>
 
@@ -169,54 +159,24 @@
 				</table>
 			</div>
 
-			{#if data.clients.totalPages > 1}
-				<div
-					class="flex items-center justify-between border-t border-gray-200 px-6 py-3 dark:border-gray-700"
-				>
-					<p class="text-sm text-gray-500 dark:text-gray-400">
-						Page {data.clients.page} of {data.clients.totalPages}
-					</p>
-					<div class="flex gap-2">
-						{#if data.clients.page > 1}
-							<a href={pageHref(data.clients.page - 1)} class="btn btn-secondary text-sm"
-								>Previous</a
-							>
-						{/if}
-						{#if data.clients.page < data.clients.totalPages}
-							<a href={pageHref(data.clients.page + 1)} class="btn btn-secondary text-sm">Next</a>
-						{/if}
-					</div>
-				</div>
-			{/if}
+			<Pagination
+				page={data.clients.page}
+				totalPages={data.clients.totalPages}
+				basePath="/clients"
+				filters={data.filters}
+			/>
 		{/if}
 	</div>
 </div>
 
-<Modal bind:open={deleteModalOpen} title="Delete Client">
+<ConfirmDelete
+	bind:open={deleteModalOpen}
+	title="Delete Client"
+	entity="Client"
+	id={clientToDelete?.id}
+>
 	<p class="text-gray-700 dark:text-gray-300">
 		Are you sure you want to delete <strong>{clientToDelete?.name}</strong>? All buildings for this
 		client will also be deleted. This action cannot be undone.
 	</p>
-
-	{#snippet actions()}
-		<button onclick={() => (deleteModalOpen = false)} class="btn btn-secondary">Cancel</button>
-		<form
-			method="POST"
-			action="?/delete"
-			use:enhance={() => {
-				return async ({ result }) => {
-					deleteModalOpen = false;
-					if (result.type === 'success') {
-						toast.success('Client deleted');
-						await invalidateAll();
-					} else {
-						toast.error('Failed to delete client');
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={clientToDelete?.id ?? ''} />
-			<button type="submit" class="btn btn-danger">Delete</button>
-		</form>
-	{/snippet}
-</Modal>
+</ConfirmDelete>

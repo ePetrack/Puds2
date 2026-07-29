@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import { toast } from '$lib/stores/toast';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
+	import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
 	import { PROJECT_STATUSES } from '$lib/schemas/project';
 	import { formatEnumLabel } from '$lib/schemas/utility';
 	import { formatCurrency } from '$lib/utils/format';
@@ -25,15 +23,6 @@
 		on_hold: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
 		cancelled: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
 	};
-
-	function pageHref(page: number) {
-		const params: string[] = [];
-		if (data.filters.search) params.push(`search=${encodeURIComponent(data.filters.search)}`);
-		if (data.filters.client) params.push(`client=${encodeURIComponent(data.filters.client)}`);
-		if (data.filters.status) params.push(`status=${encodeURIComponent(data.filters.status)}`);
-		if (page > 1) params.push(`page=${page}`);
-		return params.length ? `/projects?${params.join('&')}` : '/projects';
-	}
 </script>
 
 <svelte:head>
@@ -188,54 +177,24 @@
 				</table>
 			</div>
 
-			{#if data.projects.totalPages > 1}
-				<div
-					class="flex items-center justify-between border-t border-gray-200 px-6 py-3 dark:border-gray-700"
-				>
-					<p class="text-sm text-gray-500 dark:text-gray-400">
-						Page {data.projects.page} of {data.projects.totalPages}
-					</p>
-					<div class="flex gap-2">
-						{#if data.projects.page > 1}
-							<a href={pageHref(data.projects.page - 1)} class="btn btn-secondary text-sm"
-								>Previous</a
-							>
-						{/if}
-						{#if data.projects.page < data.projects.totalPages}
-							<a href={pageHref(data.projects.page + 1)} class="btn btn-secondary text-sm">Next</a>
-						{/if}
-					</div>
-				</div>
-			{/if}
+			<Pagination
+				page={data.projects.page}
+				totalPages={data.projects.totalPages}
+				basePath="/projects"
+				filters={data.filters}
+			/>
 		{/if}
 	</div>
 </div>
 
-<Modal bind:open={deleteModalOpen} title="Delete Project">
+<ConfirmDelete
+	bind:open={deleteModalOpen}
+	title="Delete Project"
+	entity="Project"
+	id={projectToDelete?.id}
+>
 	<p class="text-gray-700 dark:text-gray-300">
 		Are you sure you want to delete <strong>{projectToDelete?.name}</strong>? This action cannot be
 		undone.
 	</p>
-
-	{#snippet actions()}
-		<button onclick={() => (deleteModalOpen = false)} class="btn btn-secondary">Cancel</button>
-		<form
-			method="POST"
-			action="?/delete"
-			use:enhance={() => {
-				return async ({ result }) => {
-					deleteModalOpen = false;
-					if (result.type === 'success') {
-						toast.success('Project deleted');
-						await invalidateAll();
-					} else {
-						toast.error('Failed to delete project');
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={projectToDelete?.id ?? ''} />
-			<button type="submit" class="btn btn-danger">Delete</button>
-		</form>
-	{/snippet}
-</Modal>
+</ConfirmDelete>

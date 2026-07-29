@@ -78,7 +78,10 @@ Follow the existing pattern (campuses/complexes are the most recent example):
 2. Zod schema in `src/lib/schemas/<entity>.ts`.
 3. Service in `src/lib/server/services/<entity>.ts` — list/get/create/update/delete, each
    mutation writing an audit row.
-4. Routes under `src/routes/(app)/<entity>/`.
+4. Routes under `src/routes/(app)/<entity>/`. A list page composes `Pagination.svelte` and
+   `ConfirmDelete.svelte` from `src/lib/components/ui/` — don't hand-roll paging links or a
+   delete modal, and don't reintroduce a local `pageHref`; `listHref` in
+   `src/lib/utils/pagination.ts` is the one implementation.
 5. Tests: service specs in `tests/unit/`, a journey in `tests/e2e/`.
 6. Seed data in `scripts/seed.ts`, kept idempotent.
 

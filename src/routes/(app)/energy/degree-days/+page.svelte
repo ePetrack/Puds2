@@ -1,15 +1,9 @@
 <script lang="ts">
+	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { formatNumber, formatMonthYear } from '$lib/utils/format';
 	import { MIN_BASELINE_MONTHS } from '$lib/schemas/degree-days';
 
 	let { data } = $props();
-
-	function pageHref(page: number) {
-		const params: string[] = [];
-		if (data.filters.station) params.push(`station=${encodeURIComponent(data.filters.station)}`);
-		if (page > 1) params.push(`page=${page}`);
-		return params.length ? `/energy/degree-days?${params.join('&')}` : '/energy/degree-days';
-	}
 </script>
 
 <svelte:head>
@@ -193,26 +187,12 @@
 				</table>
 			</div>
 
-			{#if data.degreeDays.totalPages > 1}
-				<div
-					class="flex items-center justify-between border-t border-gray-200 px-6 py-3 dark:border-gray-700"
-				>
-					<p class="text-sm text-gray-500 dark:text-gray-400">
-						Page {data.degreeDays.page} of {data.degreeDays.totalPages}
-					</p>
-					<div class="flex gap-2">
-						{#if data.degreeDays.page > 1}
-							<a href={pageHref(data.degreeDays.page - 1)} class="btn btn-secondary text-sm"
-								>Previous</a
-							>
-						{/if}
-						{#if data.degreeDays.page < data.degreeDays.totalPages}
-							<a href={pageHref(data.degreeDays.page + 1)} class="btn btn-secondary text-sm">Next</a
-							>
-						{/if}
-					</div>
-				</div>
-			{/if}
+			<Pagination
+				page={data.degreeDays.page}
+				totalPages={data.degreeDays.totalPages}
+				basePath="/energy/degree-days"
+				filters={data.filters}
+			/>
 		{/if}
 	</div>
 </div>
