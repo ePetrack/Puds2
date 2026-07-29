@@ -80,11 +80,18 @@ VALUE`); it can't share a file with a table creation.
 
 - **`/analysis` Perspective boot (`ANALYSIS-1`).** The `<perspective-viewer>` element
   silently never registers after any earlier page load in the same browser process. It
-  **reproduces on the default branch**, and memory, SSR payload size, the dataset shape and
-  external fetches are all ruled out **with evidence** in `TODO.md`. Two previous sessions
+  **reproduces on the default branch**; memory, SSR payload size, dataset shape and external
+  fetches are all ruled out **with evidence** in `TODO.md`. Two previous sessions
   misdiagnosed it — once as caused by a code change it did not cause. Read the item, don't
   re-bisect. Widening the analysis dataset makes it reliable rather than occasional, which
   is why a naive bisect will incriminate the wrong thing.
+
+  **Root cause is established:** Perspective calls `customElements.define` from _inside_ its
+  WASM (a wasm-bindgen `bootstrap` callback), so `await import('@finos/perspective-viewer')`
+  resolving proves nothing and no error is raised. `TODO.md` records four attempts and where
+  the remaining trap is. The reproduction is checked in as
+  `tests/e2e/analysis-boot.spec.ts`, marked `test.fixme` — lift it as part of the fix rather
+  than writing a new one.
 
 ## Gate and shipping
 

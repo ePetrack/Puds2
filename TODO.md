@@ -42,7 +42,8 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | List-page shell           | `listHref` + `Pagination` + `ConfirmDelete` shared across 13 list pages; server `deleteError` now surfaced instead of swallowed    | #11 |
 | E2E isolation             | Playwright builds and seeds its own `puds_e2e` per run; `puds_dev` untouched, no manual re-seed                                    | #11 |
 
-**Current gate:** lint + typecheck clean · 175 Vitest · 49 Playwright.
+**Current gate:** lint + typecheck clean · 175 Vitest · 50 Playwright (+1 `fixme`, see
+`ANALYSIS-1`).
 
 ---
 
@@ -165,21 +166,64 @@ perspective-client.wasm` — instead of the viewer. **This is pre-existing and r
 - **why it looked like a code bug:** widening the dataset shifts timing enough that the
   latent failure becomes reliable rather than occasional, so a bisect against the widening
   incriminates it. It is a trigger, not the cause.
-- **what did NOT work** (tried and reverted; don't repeat):
-  - `await customElements.whenDefined('perspective-viewer')` — the element genuinely never
-    defines on the failing path, so this turns a fast error into a hang.
-  - Explicit `init_client`/`init_server` with `?url` WASM imports. This _does_ make Vite emit
-    `perspective-server.wasm`, `perspective-js.wasm` and `perspective-viewer.wasm` as build
-    assets (they are otherwise absent, and then serve 200) and the element _does_ register —
-    but the engine then traps on `unreachable` inside the WASM with no JS frames.
-- **next thing to try:** the explicit-init path is the most promising, since it is the only
-  approach that got the element registered. Pin the official bundler recipe for
-  `@finos/perspective` 3.8 rather than inferring argument order from `.d.ts`, and try
-  `optimizeDeps.exclude` for the perspective packages. Failing that, upgrading the three
-  perspective packages together is cheap to test.
+- **the reproduction is now checked in** as `tests/e2e/analysis-boot.spec.ts` — a warm-up
+  navigation, then the assertion, marked `test.fixme`. Lift the `fixme` as part of the fix;
+  don't write a new reproduction.
+
+#### Root cause (established, stop re-deriving it)
+
+`customElements.define('perspective-viewer', …)` is **not called by JavaScript**. Grepping
+`node_modules/@finos/perspective-viewer/dist/esm/perspective-viewer.js` shows the single
+`customElements.define(e,f)` sits inside a function invoked only from
+`__wbg_bootstrap_3185de985e76df2f` — a **wasm-bindgen import callback**. Registration
+therefore happens from _inside_ the WASM, and only once that module instantiates.
+
+That is why the symptom has no diagnostics: `await import('@finos/perspective-viewer')`
+resolves whether or not the WASM ever instantiated, so a resolved import proves nothing and
+nothing throws. `@finos/perspective` then calls, in its own bundle:
+
+```js
+let n = customElements.get('perspective-viewer');
+if (n) v = Promise.resolve(n.__wasm_module__);
+else if (v === undefined) throw new Error('Missing perspective-client.wasm');
+```
+
+— i.e. **the element is where `@finos/perspective` gets its client WASM from.** The error
+message names a missing file, but the actual missing thing is the element.
+
+#### What did NOT work (tried and reverted; don't repeat)
+
+- `await customElements.whenDefined('perspective-viewer')` — the element genuinely never
+  defines on the failing path, so this turns a fast error into a hang.
+- **`optimizeDeps.exclude`** for all four `@finos/perspective*` packages. No effect, and in
+  hindsight it cannot have one: `optimizeDeps` governs **dev** pre-bundling, while the e2e
+  suite runs the **production build**. Don't spend time here again.
+- **Both inline builds** (`perspective-viewer.inline.js` + `perspective.inline.js`, which
+  embed their WASM and `await init_client()`/`init_server()` at module top level). This
+  **fixes registration** — `customElements.get(…)` is `true`, the "Missing
+  perspective-client.wasm" error is gone, and it reproduced clean 5/5 in isolation. But the
+  page still hangs on the spinner, and probing each step shows `perspective.worker()` and
+  `worker.table(data)` both **succeed**; the trap (`pageerror: unreachable`) happens in
+  **`viewerEl.load(table)`**.
+- **Inline viewer + normal `@finos/perspective` with an explicit `init_server`.** Vite does
+  emit `perspective-server.wasm` as a build asset and it serves 200. `init_server(fetch(url))`
+  (stage-0 decompression on, the default) traps on `unreachable`; `init_server(bytes, true)`
+  (stage-0 skipped) fails differently with `t.psp_is_memory64 is not a function`. So stage-0
+  handling is required and is not the variable.
+
+#### Where this leaves it
+
+The failure is **not** asset resolution, MIME type, or load ordering — those are all fixed by
+the inline builds. What remains is that the viewer element and `@finos/perspective` end up
+holding **two different client-WASM instances**, and a `Table` created by one traps when
+loaded into the other. The next attempt should make both share a single client instance —
+e.g. inline `@finos/perspective` only (it initialises a matched client+server pair) and
+register the element by calling the viewer's exported `init_client` with that same module,
+rather than letting each package initialise its own.
+
 - **acceptance:**
   - [ ] `/analysis` renders the viewer after an earlier page load in the same browser
-  - [ ] a second e2e loading `/analysis` in a fresh context passes repeatedly
+  - [ ] `tests/e2e/analysis-boot.spec.ts` passes with its `test.fixme` removed, repeatedly
   - [ ] the WASM binaries are build assets rather than resolved implicitly
 
 ### QOL-1 — Extract the duplicated list-page shell
