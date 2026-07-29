@@ -71,9 +71,10 @@ VALUE`); it can't share a file with a table creation.
   `tag` in `drizzle/meta/_journal.json`, or the migration won't be found.
 - **Don't pipe a check through `tail`** — it masks the exit code and a failing gate looks
   green.
-- **E2E writes into `puds_dev`** (`TEST-1`). Re-seed before any full run, or leftover `E2E …`
-  rows break tests that assume seeded data:
-  `su postgres -c "dropdb --if-exists puds_dev && createdb -O puds puds_dev" && npm run db:migrate && npm run db:seed`
+- **E2E builds its own database** — `globalSetup` drops, recreates, migrates and seeds
+  `puds_e2e` on every run, so `puds_dev` is never touched and no manual re-seed is needed.
+  Override with `E2E_DATABASE_URL`. Don't point it at `puds_dev`: the run starts by dropping
+  it.
 
 ## Known-flaky — do not investigate from scratch
 

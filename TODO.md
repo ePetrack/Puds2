@@ -40,6 +40,7 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Meter ownership           | `meters.ownership` recorded rather than inferred; ownership and billing separated; unrecorded ownership surfaced as a gap          | #10 |
 | Degree-day import         | `/energy/degree-days` — CSV import that upserts a revised series, coverage panel on the allocation form, one audit row per run     | #11 |
 | List-page shell           | `listHref` + `Pagination` + `ConfirmDelete` shared across 13 list pages; server `deleteError` now surfaced instead of swallowed    | #11 |
+| E2E isolation             | Playwright builds and seeds its own `puds_e2e` per run; `puds_dev` untouched, no manual re-seed                                    | #11 |
 
 **Current gate:** lint + typecheck clean · 175 Vitest · 49 Playwright.
 
@@ -535,17 +536,63 @@ perspective-client.wasm` — instead of the viewer. **This is pre-existing and r
 
 ### TEST-1 — e2e pollutes the dev database
 
-- **status:** todo
+- **status:** done
 - **priority:** P3
 - **effort:** S
 - **blocked_by:** none
-- **files:** `playwright.config.ts`, `tests/e2e/`
-- **why:** The suite runs against seeded `puds_dev` and leaves `E2E …` rows behind, so dev
-  data accumulates run over run. Documented in the README, but a dedicated `puds_e2e`
-  database (or cleanup hook) would be cleaner.
+- **files:** `playwright.config.ts`, `tests/e2e/global-setup.ts`, `.github/workflows/ci.yml`
+- **why:** The suite ran against seeded `puds_dev` and left `E2E …` rows behind, so dev data
+  accumulated run over run and specs that assume seeded data started failing until someone
+  re-created the database by hand. The workaround was documented rather than fixed, and it
+  cost several sessions.
+- **shipped:** a Playwright `globalSetup` that drops (`WITH (FORCE)`, so a leftover
+  connection can't block it), recreates, migrates and seeds `puds_e2e` before every run.
+  The `webServer` is pointed at that database.
+- **decisions worth keeping:**
+  - **`E2E_DATABASE_URL` never falls back to `DATABASE_URL`.** Inheriting it would put the
+    run back on `puds_dev` — and the run _starts by dropping_ whatever it points at, so a
+    silent fallback would be destructive rather than merely wrong.
+  - **The setup reuses `scripts/seed.ts`** instead of an e2e-only fixture, so the demo data
+    the suite asserts against can't drift from what a developer sees.
+  - **CI's `db:migrate` / `db:seed` steps were removed from the e2e job** — they seeded
+    `puds_dev`, which the suite no longer reads. The unit-test job keeps its own `puds_test`
+    setup.
+- **verified:** row counts in `puds_dev` (clients, buildings, meters, readings, tasks,
+  degree days, documents) identical before and after four consecutive full runs, and a cold
+  run with `puds_e2e` absent passes — which is the state CI is in every time.
 - **acceptance:**
-  - [ ] e2e runs leave `puds_dev` unchanged
-  - [ ] CI unaffected
+  - [x] e2e runs leave `puds_dev` unchanged
+  - [x] CI unaffected
+
+### TEST-2 — Intermittent failure in the client delete journey
+
+- **status:** todo
+- **priority:** P3
+- **effort:** S
+- **blocked_by:** none — needs a reproduction before it needs a fix
+- **files:** `tests/e2e/clients.spec.ts`, `src/lib/components/ui/ConfirmDelete.svelte`,
+  `src/lib/components/ui/Modal.svelte`
+- **why:** `clients CRUD › creates, edits, and deletes a client` failed **twice in roughly
+  26 full-suite runs** during the `TEST-1` work. Everything else passed in the same runs.
+  Filed rather than fixed because it is genuinely not reproducible yet, and inventing a fix
+  for a race nobody has observed closely is how a flake gets buried instead of removed.
+- **what has been ruled out:**
+  - **Not `TEST-1`.** It reproduced both before and after the database change, and
+    `puds_dev`/`puds_e2e` contents were verified identical across runs.
+  - **Not data accumulation.** The test creates a uniquely-named client and asserts on that
+    name; the suite now starts from a freshly seeded database every run regardless.
+  - **Not reproducible in isolation** — 12 consecutive runs of `clients.spec.ts` alone, and
+    12 consecutive full-suite runs after the failures, all green.
+- **why it is easy to miss:** `playwright.config.ts` sets `retries: process.env.CI ? 1 : 0`,
+  so CI silently retries and stays green. Only a local run surfaces it.
+- **where to look first:** the last three lines of the test — click row Delete, click the
+  dialog's Delete, then assert "No clients match your filters". `ConfirmDelete` closes the
+  modal _before_ awaiting `invalidateAll()` (as the hand-rolled copies did), and `Modal` has
+  200ms fade/fly transitions, so the dialog is still in the DOM while the list reloads.
+- **acceptance:**
+  - [ ] a reliable reproduction (e.g. `--repeat-each` under CPU load), or evidence it is
+        gone
+  - [ ] the race fixed at the component, not papered over with a local retry
 
 ---
 
