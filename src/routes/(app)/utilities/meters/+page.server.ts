@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { listMeters, deleteMeter } from '$lib/server/services/meters';
+import { optionalUuid } from '$lib/utils/uuid';
 import { listBuildings } from '$lib/server/services/buildings';
 import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import { UTILITY_TYPES, METER_STATUSES } from '$lib/schemas/utility';
@@ -7,7 +8,7 @@ import type { Meter } from '$lib/server/db/schema';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
-	const buildingId = url.searchParams.get('building') ?? '';
+	const buildingId = optionalUuid(url.searchParams.get('building')) ?? '';
 	const typeParam = url.searchParams.get('type') ?? '';
 	const statusParam = url.searchParams.get('status') ?? '';
 

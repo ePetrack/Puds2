@@ -45,7 +45,7 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Review passes             | `QOL-2` — modal focus trap + restore, `scope="col"` on 110 headers; authz/upload/N+1 reviewed clean; **`SEC-1` filed**             | #11 |
 | Perspective boot          | `ANALYSIS-1` — WASM handed to `init_client`/`init_server` as bytes; `/analysis` renders reliably, unblocking `ANALYTICS-1`         | #11 |
 
-**Current gate:** lint + typecheck clean · 179 Vitest · 51 Playwright.
+**Current gate:** lint + typecheck clean · 179 Vitest · 68 Playwright.
 
 ---
 
@@ -320,6 +320,41 @@ nosniff`, so uploaded content cannot execute in the app's origin. A failed DB wr
   - [x] a11y pass over forms, tables and modals
   - [x] security review of auth, RBAC, upload and download paths
   - [x] findings either fixed or filed as their own TODO items
+
+### QA-1 — A malformed id in a URL returned 500 instead of 404
+
+- **status:** done
+- **priority:** P1
+- **effort:** S
+- **blocked_by:** none
+- **files:** `src/params/uuid.ts`, `src/lib/utils/uuid.ts`, `src/hooks.server.ts`,
+  `src/routes/+error.svelte`, `src/routes/(app)/+error.svelte`,
+  `tests/e2e/error-handling.spec.ts`
+- **why:** Every id column is a Postgres `uuid`, so a malformed id didn't come back empty —
+  it made the _query_ fail (`invalid input syntax for type uuid`, confirmed directly against
+  the database). That throw was unhandled, so `/clients/not-a-uuid` rendered a **500** where
+  it plainly means 404. **18 routes** and **11 list filters** were exposed.
+- **shipped:**
+  - A **route matcher** (`[id=uuid]`), not a per-route guard. SvelteKit answers 404 before any
+    load runs, and a new detail route cannot forget it — 12 `[id]` directories renamed.
+  - `optionalUuid` for the list filters: a junk `?client=` is **ignored** rather than fatal,
+    because a filter is a UI affordance, not an assertion about the data.
+  - A **`handleError` hook**. `requestLogging` already minted a `requestId` per request but
+    nothing logged the one event worth correlating — the failure. The message returned is
+    deliberately generic (a raw exception can carry a connection string), so the id is what
+    makes a production 500 traceable.
+  - `+error.svelte` at the root and inside `(app)`, showing the status, a safe message and
+    the request id to quote. There was no error page at all before; every failure rendered
+    SvelteKit's unstyled default.
+- **trap worth remembering:** the matcher first imported `isUuid` from `$lib/server`.
+  `svelte-check` passed and the **build** failed with
+  `vite-plugin-sveltekit-guard: An impossible situation occurred` — param matchers run on the
+  client too. The helper lives in `$lib/utils/uuid.ts` for that reason.
+- **acceptance:**
+  - [x] malformed ids 404 across detail, edit and the download endpoint
+  - [x] a well-formed id that matches nothing still 404s — the guard doesn't swallow it
+  - [x] malformed list filters render the list instead of erroring
+  - [x] unhandled errors are logged against their request id and the page shows it
 
 ### SEC-1 — A client-role user can read every other client's data
 

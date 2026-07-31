@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { listProjects, deleteProject } from '$lib/server/services/projects';
+import { optionalUuid } from '$lib/utils/uuid';
 import { listClients } from '$lib/server/services/clients';
 import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import { PROJECT_STATUSES } from '$lib/schemas/project';
@@ -9,7 +10,7 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ url }) => {
 	const page = Number(url.searchParams.get('page')) || 1;
 	const search = url.searchParams.get('search') ?? undefined;
-	const clientId = url.searchParams.get('client') ?? '';
+	const clientId = optionalUuid(url.searchParams.get('client')) ?? '';
 	const statusParam = url.searchParams.get('status') ?? '';
 	const status = (PROJECT_STATUSES as readonly string[]).includes(statusParam)
 		? (statusParam as Project['status'])

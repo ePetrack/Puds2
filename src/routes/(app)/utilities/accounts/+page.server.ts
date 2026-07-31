@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { listAccounts, deleteAccount } from '$lib/server/services/utility-accounts';
+import { optionalUuid } from '$lib/utils/uuid';
 import { listClients } from '$lib/server/services/clients';
 import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import { UTILITY_TYPES, ACCOUNT_STATUSES } from '$lib/schemas/utility';
@@ -7,7 +8,7 @@ import type { UtilityAccount } from '$lib/server/db/schema';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
-	const clientId = url.searchParams.get('client') ?? '';
+	const clientId = optionalUuid(url.searchParams.get('client')) ?? '';
 	const typeParam = url.searchParams.get('type') ?? '';
 	const statusParam = url.searchParams.get('status') ?? '';
 

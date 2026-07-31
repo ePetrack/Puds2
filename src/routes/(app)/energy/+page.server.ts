@@ -5,14 +5,15 @@ import {
 	monthlyUsageSeries
 } from '$lib/server/services/energy-readings';
 import { listMeters } from '$lib/server/services/meters';
+import { optionalUuid } from '$lib/utils/uuid';
 import { listBuildings } from '$lib/server/services/buildings';
 import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
 	const page = Number(url.searchParams.get('page')) || 1;
-	const meterId = url.searchParams.get('meter') ?? '';
-	const buildingId = url.searchParams.get('building') ?? '';
+	const meterId = optionalUuid(url.searchParams.get('meter')) ?? '';
+	const buildingId = optionalUuid(url.searchParams.get('building')) ?? '';
 
 	const [readings, series, meters, buildingsPage] = await Promise.all([
 		listReadings({ page, meterId: meterId || undefined, buildingId: buildingId || undefined }),

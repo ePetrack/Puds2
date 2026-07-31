@@ -1,10 +1,11 @@
 import { listReconcilableMeters, reconcileMeter } from '$lib/server/services/reconciliation';
+import { optionalUuid } from '$lib/utils/uuid';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
 	const meters = await listReconcilableMeters();
 
-	const requested = url.searchParams.get('meter') ?? '';
+	const requested = optionalUuid(url.searchParams.get('meter')) ?? '';
 	const selectedId = meters.some((m) => m.id === requested) ? requested : (meters[0]?.id ?? '');
 
 	const monthsParam = Number(url.searchParams.get('months'));

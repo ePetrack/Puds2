@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { listComplexes, deleteComplex } from '$lib/server/services/complexes';
+import { optionalUuid } from '$lib/utils/uuid';
 import { listClients } from '$lib/server/services/clients';
 import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import type { Actions, PageServerLoad } from './$types';
@@ -7,7 +8,7 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ url }) => {
 	const page = Number(url.searchParams.get('page')) || 1;
 	const search = url.searchParams.get('search') ?? undefined;
-	const clientId = url.searchParams.get('client') ?? undefined;
+	const clientId = optionalUuid(url.searchParams.get('client')) ?? undefined;
 
 	const [complexes, clientsPage] = await Promise.all([
 		listComplexes({ page, search, clientId }),
