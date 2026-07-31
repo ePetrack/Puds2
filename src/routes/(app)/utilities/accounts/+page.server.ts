@@ -1,13 +1,13 @@
-import { fail } from '@sveltejs/kit';
 import { listAccounts, deleteAccount } from '$lib/server/services/utility-accounts';
+import { deleteAction } from '$lib/server/actions';
+import { optionalUuid } from '$lib/utils/uuid';
 import { listClients } from '$lib/server/services/clients';
-import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import { UTILITY_TYPES, ACCOUNT_STATUSES } from '$lib/schemas/utility';
 import type { UtilityAccount } from '$lib/server/db/schema';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
-	const clientId = url.searchParams.get('client') ?? '';
+	const clientId = optionalUuid(url.searchParams.get('client')) ?? '';
 	const typeParam = url.searchParams.get('type') ?? '';
 	const statusParam = url.searchParams.get('status') ?? '';
 
@@ -31,16 +31,9 @@ export const load: PageServerLoad = async ({ url }) => {
 };
 
 export const actions: Actions = {
-	delete: async ({ request, locals }) => {
-		const user = requireRole(locals.user, WRITE_ROLES);
-		const form = await request.formData();
-		const id = String(form.get('id') ?? '');
-		if (!id) return fail(400, { deleteError: 'Missing account id' });
-
-		const deleted = await deleteAccount(user.id, id);
-		if (!deleted) return fail(404, { deleteError: 'Account not found' });
-
-		locals.log.info({ accountId: id }, 'utility account deleted');
-		return { deleted: true };
-	}
+	delete: deleteAction({
+		entity: 'Account',
+		logKey: 'accountId',
+		remove: deleteAccount
+	})
 };

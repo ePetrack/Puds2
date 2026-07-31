@@ -1,5 +1,4 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { projectSchema } from '$lib/schemas/project';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { createProject } from '$lib/server/services/projects';
@@ -32,7 +31,7 @@ export const actions: Actions = {
 
 		const parsed = projectSchema.safeParse({ ...values, buildingIds });
 		if (!parsed.success) {
-			return fail(400, { values, buildingIds, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, buildingIds, errors: fieldErrors(parsed.error) });
 		}
 
 		const project = await createProject(user.id, parsed.data);

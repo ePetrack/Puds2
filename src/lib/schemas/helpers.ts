@@ -39,8 +39,15 @@ export function formDataToObject(form: FormData): Record<string, string> {
 	return obj;
 }
 
-/** Flatten a ZodError into { field: message } for form display. */
-export function fieldErrors(error: z.ZodError): Record<string, string> {
+/**
+ * Flatten a ZodError into `{ field: message }` for form display.
+ *
+ * Generic over the parsed shape because zod v4's `safeParse` returns `ZodError<T>`, and the
+ * bare `ZodError` this used to take is not assignable from it — which is why all 24 call
+ * sites carried a `parsed.error as z.ZodError` cast. A cast repeated everywhere is a
+ * signature that doesn't fit, not a language limitation.
+ */
+export function fieldErrors<T>(error: z.ZodError<T>): Record<string, string> {
 	const errors: Record<string, string> = {};
 	for (const issue of error.issues) {
 		const key = issue.path.join('.') || '_form';

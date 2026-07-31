@@ -9,10 +9,11 @@ import {
 	type UtilityBill,
 	type UtilityAccount
 } from '../db/schema';
-import { recordAudit, diffRecords } from './audit';
+import { recordAudit } from './audit';
+import { auditedInsert, auditedUpdate, auditedDelete } from './audited';
 import { parseCSV } from '../csv';
 import { utilityBillSchema, type UtilityBillInput, BILL_STATUSES } from '$lib/schemas/utility';
-import type { Paginated } from './clients';
+import type { Paginated } from './pagination';
 
 export type BillWithRefs = UtilityBill & {
 	accountNumber: string | null;
@@ -145,38 +146,11 @@ export async function billHistoryForAccount(accountId: string): Promise<UtilityB
 }
 
 export async function createBill(actorId: string, input: UtilityBillInput) {
-	return db.transaction(async (tx) => {
-		const [created] = await tx.insert(utilityBills).values(toRow(input)).returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'utility_bill',
-			entityId: created.id,
-			action: 'create',
-			changes: diffRecords({}, toRow(input))
-		});
-		return created;
-	});
+	return auditedInsert(actorId, utilityBills, 'utility_bill', toRow(input));
 }
 
 export async function updateBill(actorId: string, id: string, input: UtilityBillInput) {
-	return db.transaction(async (tx) => {
-		const [before] = await tx.select().from(utilityBills).where(eq(utilityBills.id, id));
-		if (!before) return undefined;
-		const row = toRow(input);
-		const [updated] = await tx
-			.update(utilityBills)
-			.set({ ...row, updatedAt: new Date() })
-			.where(eq(utilityBills.id, id))
-			.returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'utility_bill',
-			entityId: id,
-			action: 'update',
-			changes: diffRecords(before, row)
-		});
-		return updated;
-	});
+	return auditedUpdate(actorId, utilityBills, utilityBills.id, 'utility_bill', id, toRow(input));
 }
 
 /** Workflow transition; marking paid stamps today's payment date if absent. */
@@ -207,18 +181,9 @@ export async function setBillStatus(actorId: string, id: string, status: Utility
 }
 
 export async function deleteBill(actorId: string, id: string): Promise<boolean> {
-	return db.transaction(async (tx) => {
-		const [deleted] = await tx.delete(utilityBills).where(eq(utilityBills.id, id)).returning();
-		if (!deleted) return false;
-		await recordAudit(tx, {
-			actorId,
-			entity: 'utility_bill',
-			entityId: id,
-			action: 'delete',
-			changes: { totalCost: { from: deleted.totalCost, to: null } }
-		});
-		return true;
-	});
+	return auditedDelete(actorId, utilityBills, utilityBills.id, 'utility_bill', id, (deleted) => ({
+		totalCost: { from: deleted.totalCost, to: null }
+	}));
 }
 
 // ---------------------------------------------------------------------------

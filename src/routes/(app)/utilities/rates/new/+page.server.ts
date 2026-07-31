@@ -1,5 +1,4 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { rateScheduleSchema } from '$lib/schemas/utility';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { createRateSchedule } from '$lib/server/services/rate-schedules';
@@ -19,7 +18,7 @@ export const actions: Actions = {
 
 		const parsed = rateScheduleSchema.safeParse(values);
 		if (!parsed.success) {
-			return fail(400, { values, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, errors: fieldErrors(parsed.error) });
 		}
 
 		const rate = await createRateSchedule(user.id, parsed.data);

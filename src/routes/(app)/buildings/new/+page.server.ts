@@ -1,5 +1,4 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { buildingSchema } from '$lib/schemas/building';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { createBuilding } from '$lib/server/services/buildings';
@@ -30,7 +29,7 @@ export const actions: Actions = {
 
 		const parsed = buildingSchema.safeParse(values);
 		if (!parsed.success) {
-			return fail(400, { values, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, errors: fieldErrors(parsed.error) });
 		}
 
 		const building = await createBuilding(user.id, parsed.data);

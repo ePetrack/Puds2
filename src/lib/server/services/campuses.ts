@@ -1,9 +1,9 @@
 import { and, asc, count, desc, eq, ilike, type SQL } from 'drizzle-orm';
 import { db } from '../db';
 import { campuses, clients, buildings, complexes, type Campus, type Client } from '../db/schema';
-import { recordAudit, diffRecords } from './audit';
+import { auditedInsert, auditedUpdate, auditedDelete } from './audited';
 import type { CampusInput } from '$lib/schemas/campus';
-import type { Paginated } from './clients';
+import type { Paginated } from './pagination';
 
 export interface CampusListParams {
 	page?: number;
@@ -100,17 +100,7 @@ export async function listCampusOptions(
 }
 
 export async function createCampus(actorId: string, input: CampusInput): Promise<Campus> {
-	return db.transaction(async (tx) => {
-		const [created] = await tx.insert(campuses).values(toRow(input)).returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'campus',
-			entityId: created.id,
-			action: 'create',
-			changes: diffRecords({}, toRow(input))
-		});
-		return created;
-	});
+	return auditedInsert(actorId, campuses, 'campus', toRow(input));
 }
 
 export async function updateCampus(
@@ -118,37 +108,11 @@ export async function updateCampus(
 	id: string,
 	input: CampusInput
 ): Promise<Campus | undefined> {
-	return db.transaction(async (tx) => {
-		const [before] = await tx.select().from(campuses).where(eq(campuses.id, id));
-		if (!before) return undefined;
-		const row = toRow(input);
-		const [updated] = await tx
-			.update(campuses)
-			.set({ ...row, updatedAt: new Date() })
-			.where(eq(campuses.id, id))
-			.returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'campus',
-			entityId: id,
-			action: 'update',
-			changes: diffRecords(before, row)
-		});
-		return updated;
-	});
+	return auditedUpdate(actorId, campuses, campuses.id, 'campus', id, toRow(input));
 }
 
 export async function deleteCampus(actorId: string, id: string): Promise<boolean> {
-	return db.transaction(async (tx) => {
-		const [deleted] = await tx.delete(campuses).where(eq(campuses.id, id)).returning();
-		if (!deleted) return false;
-		await recordAudit(tx, {
-			actorId,
-			entity: 'campus',
-			entityId: id,
-			action: 'delete',
-			changes: { name: { from: deleted.name, to: null } }
-		});
-		return true;
-	});
+	return auditedDelete(actorId, campuses, campuses.id, 'campus', id, (deleted) => ({
+		name: { from: deleted.name, to: null }
+	}));
 }

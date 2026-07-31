@@ -1,5 +1,4 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { utilityAccountSchema } from '$lib/schemas/utility';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { createAccount } from '$lib/server/services/utility-accounts';
@@ -34,7 +33,7 @@ export const actions: Actions = {
 
 		const parsed = utilityAccountSchema.safeParse(values);
 		if (!parsed.success) {
-			return fail(400, { values, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, errors: fieldErrors(parsed.error) });
 		}
 
 		const account = await createAccount(user.id, parsed.data);

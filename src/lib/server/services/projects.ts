@@ -3,7 +3,7 @@ import { db } from '../db';
 import { projects, projectBuildings, clients, buildings, type Project } from '../db/schema';
 import { recordAudit, diffRecords } from './audit';
 import type { ProjectInput } from '$lib/schemas/project';
-import type { Paginated } from './clients';
+import type { Paginated } from './pagination';
 
 export type ProjectWithRefs = Project & {
 	clientName: string | null;

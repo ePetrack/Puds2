@@ -1,5 +1,4 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { clientSchema } from '$lib/schemas/client';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { createClient } from '$lib/server/services/clients';
@@ -13,7 +12,7 @@ export const actions: Actions = {
 
 		const parsed = clientSchema.safeParse(values);
 		if (!parsed.success) {
-			return fail(400, { values, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, errors: fieldErrors(parsed.error) });
 		}
 
 		const client = await createClient(user.id, parsed.data);

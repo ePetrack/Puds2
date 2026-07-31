@@ -4,7 +4,7 @@ import { degreeDays, type DegreeDay } from '../db/schema';
 import { recordAudit } from './audit';
 import { parseCSV } from '../csv';
 import { degreeDaySchema, type DegreeDayInput } from '$lib/schemas/degree-days';
-import type { Paginated } from './clients';
+import type { Paginated } from './pagination';
 
 /**
  * Degree days back the `weather_normalized` allocation method. They are **stored, never

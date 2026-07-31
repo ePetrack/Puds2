@@ -44,8 +44,9 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Dev env loading           | `vite dev`/`preview` read `.env` themselves (`ENV-1`); shell values still win                                                      | #11 |
 | Review passes             | `QOL-2` — modal focus trap + restore, `scope="col"` on 110 headers; authz/upload/N+1 reviewed clean; **`SEC-1` filed**             | #11 |
 | Perspective boot          | `ANALYSIS-1` — WASM handed to `init_client`/`init_server` as bytes; `/analysis` renders reliably, unblocking `ANALYTICS-1`         | #11 |
+| QA/QC pass                | Malformed ids 404 not 500, `handleError` + error pages, five untested services covered, route/service ceremony shared (−276 lines) | #12 |
 
-**Current gate:** lint + typecheck clean · 179 Vitest · 51 Playwright.
+**Current gate:** lint + typecheck clean · 231 Vitest · 68 Playwright.
 
 ---
 
@@ -320,6 +321,120 @@ nosniff`, so uploaded content cannot execute in the app's origin. A failed DB wr
   - [x] a11y pass over forms, tables and modals
   - [x] security review of auth, RBAC, upload and download paths
   - [x] findings either fixed or filed as their own TODO items
+
+### QA-1 — A malformed id in a URL returned 500 instead of 404
+
+- **status:** done
+- **priority:** P1
+- **effort:** S
+- **blocked_by:** none
+- **files:** `src/params/uuid.ts`, `src/lib/utils/uuid.ts`, `src/hooks.server.ts`,
+  `src/routes/+error.svelte`, `src/routes/(app)/+error.svelte`,
+  `tests/e2e/error-handling.spec.ts`
+- **why:** Every id column is a Postgres `uuid`, so a malformed id didn't come back empty —
+  it made the _query_ fail (`invalid input syntax for type uuid`, confirmed directly against
+  the database). That throw was unhandled, so `/clients/not-a-uuid` rendered a **500** where
+  it plainly means 404. **18 routes** and **11 list filters** were exposed.
+- **shipped:**
+  - A **route matcher** (`[id=uuid]`), not a per-route guard. SvelteKit answers 404 before any
+    load runs, and a new detail route cannot forget it — 12 `[id]` directories renamed.
+  - `optionalUuid` for the list filters: a junk `?client=` is **ignored** rather than fatal,
+    because a filter is a UI affordance, not an assertion about the data.
+  - A **`handleError` hook**. `requestLogging` already minted a `requestId` per request but
+    nothing logged the one event worth correlating — the failure. The message returned is
+    deliberately generic (a raw exception can carry a connection string), so the id is what
+    makes a production 500 traceable.
+  - `+error.svelte` at the root and inside `(app)`, showing the status, a safe message and
+    the request id to quote. There was no error page at all before; every failure rendered
+    SvelteKit's unstyled default.
+- **trap worth remembering:** the matcher first imported `isUuid` from `$lib/server`.
+  `svelte-check` passed and the **build** failed with
+  `vite-plugin-sveltekit-guard: An impossible situation occurred` — param matchers run on the
+  client too. The helper lives in `$lib/utils/uuid.ts` for that reason.
+- **acceptance:**
+  - [x] malformed ids 404 across detail, edit and the download endpoint
+  - [x] a well-formed id that matches nothing still 404s — the guard doesn't swallow it
+  - [x] malformed list filters render the list instead of erroring
+  - [x] unhandled errors are logged against their request id and the page shows it
+
+### QA-2 — Five services shipped with no tests
+
+- **status:** done
+- **priority:** P1
+- **effort:** M
+- **blocked_by:** none
+- **files:** `tests/unit/audit.test.ts`, `providers.service.test.ts`,
+  `rate-schedules.service.test.ts`, `utility-accounts.service.test.ts`,
+  `analysis.service.test.ts`
+- **why:** ~506 lines of service code had **no unit coverage at all**, and the refactor in
+  `QA-3` was about to move code underneath it. `audit.ts` was the worst of them:
+  `diffRecords` is the compliance backbone — every mutation in the app records its change
+  through it — and what it _omits_ matters as much as what it keeps, because an audit trail
+  that quietly drops a field looks complete while being wrong.
+- **shipped:** 52 tests. `diffRecords` is now pinned on the cases that are easy to get wrong
+  — undefined vs null treated as the same absence, keys absent from the new record meaning
+  "not part of this write" rather than "removed", `createdAt`/`updatedAt` always excluded,
+  dates compared by value, arrays and `jsonb` compared structurally, and a numeric string
+  held distinct from a number. All 14 passed first run, so this locks in correct behaviour
+  rather than fixing broken behaviour.
+- **one test asserts a known defect on purpose:** `analysis.service.test.ts` has a test named
+  `KNOWN GAP: a complex master meter reading has no building and no client`. That is the
+  `ANALYTICS-1` bug — the reading query reaches the client through `buildings.client_id`, so
+  a meter whose premise is a _complex_ lands unattributed. Pinning it means the fix is a
+  deliberate edit here rather than a surprise. **Update it when `ANALYTICS-1` lands.**
+- **acceptance:**
+  - [x] every service under `src/lib/server/services/` has a unit test
+  - [x] `diffRecords` covered including its exclusions
+  - [x] the analysis dataset covered before `ANALYTICS-1` rewrites it
+
+### QA-3 — Targeted refactor of the route and service duplication
+
+- **status:** done
+- **priority:** P2
+- **effort:** M
+- **blocked_by:** none
+- **files:** `src/lib/server/actions.ts`, `src/lib/server/services/audited.ts`,
+  `src/lib/server/services/pagination.ts`, `src/lib/schemas/helpers.ts`, and the services and
+  list routes that now use them
+- **why:** Six milestones built independently left the same shapes copied across the route and
+  service layers. Measured before: 24 validate-and-save blocks, 24 `as z.ZodError` casts, 13
+  delete actions, 13 transaction-plus-audit trios, 9 services importing `Paginated` from a
+  sibling entity service.
+- **shipped:**
+  - **`fieldErrors` made generic over `ZodError<T>`.** Every call site carried
+    `parsed.error as z.ZodError` because zod v4 returns the generic form and the signature
+    took the bare one. **24 casts deleted** — a cast repeated everywhere is a signature that
+    doesn't fit, not a language limitation.
+  - **`deleteAction({ entity, remove, … })`** replaces the 13 hand-written delete actions,
+    keeping the exact wording each produced so `ConfirmDelete`'s `deleteError` path is
+    unchanged. It also folds in the FK-conflict case `/utilities/providers` handled by hand,
+    so a delete blocked by a reference is a **409 with a reason** rather than a 500.
+  - **`auditedInsert` / `auditedUpdate` / `auditedDelete`** carry the transaction-plus-audit
+    ceremony for the **9** services whose CRUD is canonical. The invariant that every mutation
+    writes `audit_log` in the same transaction was previously restated 13 times and could
+    therefore be got wrong in one of them.
+  - **`Paginated` moved** to `services/pagination.ts` with `pageBounds`/`paginate`.
+- **type safety was the deciding constraint.** The helpers are generic over the table
+  (`InferInsertModel<T>` / `InferSelectModel<T>`), so callers keep full checking; the casts
+  Drizzle's builder generics force are confined to that one file. **Verified** by passing a
+  non-existent column and confirming `svelte-check` still rejects it — without that the
+  extraction would have traded compile-time safety for line count, which is a bad trade in a
+  codebase whose point is auditable correctness.
+- **not converted, deliberately:** `meters` (premise validation), `projects` (join table),
+  `energy-readings` and `documents` (bespoke create paths), and the 24 create/edit route
+  actions, several of which carry per-entity logic. The repeated _mechanism_ is shared; the
+  repeated _shape_ stays visible.
+- **one regression, caught by the tests written first:** `createTask` was not canonical — it
+  inserted `createdBy: actorId` alongside `toRow(input)`, and the conversion dropped it. The
+  `tasks` spec failed immediately. This is the whole argument for the defects → tests →
+  refactor ordering, and it is why `QA-2` came first.
+- **result:** src net **−276 lines**, with **no existing test modified** — the contract for a
+  refactor.
+- **acceptance:**
+  - [x] zero `as z.ZodError` casts
+  - [x] the delete action exists once
+  - [x] `Paginated` no longer imported from an entity service
+  - [x] existing suites pass unmodified; e2e green three consecutive runs
 
 ### SEC-1 — A client-role user can read every other client's data
 

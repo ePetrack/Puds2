@@ -1,5 +1,4 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { campusSchema } from '$lib/schemas/campus';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { createCampus } from '$lib/server/services/campuses';
@@ -22,7 +21,7 @@ export const actions: Actions = {
 
 		const parsed = campusSchema.safeParse(values);
 		if (!parsed.success) {
-			return fail(400, { values, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, errors: fieldErrors(parsed.error) });
 		}
 
 		const campus = await createCampus(user.id, parsed.data);

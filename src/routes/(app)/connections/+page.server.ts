@@ -1,4 +1,5 @@
 import { listMeters } from '$lib/server/services/meters';
+import { optionalUuid } from '$lib/utils/uuid';
 import { listBuildings } from '$lib/server/services/buildings';
 import { listComplexes } from '$lib/server/services/complexes';
 import { listAccounts } from '$lib/server/services/utility-accounts';
@@ -42,7 +43,7 @@ export interface PremiseGroup {
 }
 
 export const load: PageServerLoad = async ({ url }) => {
-	const clientId = url.searchParams.get('client') ?? '';
+	const clientId = optionalUuid(url.searchParams.get('client')) ?? '';
 	const typeParam = url.searchParams.get('type') ?? '';
 	const ownershipParam = url.searchParams.get('ownership') ?? '';
 

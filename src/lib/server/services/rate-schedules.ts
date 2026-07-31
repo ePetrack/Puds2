@@ -1,7 +1,7 @@
 import { and, asc, eq, type SQL } from 'drizzle-orm';
 import { db } from '../db';
 import { rateSchedules, utilityProviders, type RateSchedule } from '../db/schema';
-import { recordAudit, diffRecords } from './audit';
+import { auditedInsert, auditedUpdate, auditedDelete } from './audited';
 import type { RateScheduleInput } from '$lib/schemas/utility';
 
 export type RateScheduleWithProvider = RateSchedule & { providerName: string | null };
@@ -45,51 +45,22 @@ export async function getRateSchedule(id: string): Promise<RateSchedule | undefi
 }
 
 export async function createRateSchedule(actorId: string, input: RateScheduleInput) {
-	return db.transaction(async (tx) => {
-		const [created] = await tx.insert(rateSchedules).values(toRow(input)).returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'rate_schedule',
-			entityId: created.id,
-			action: 'create',
-			changes: diffRecords({}, toRow(input))
-		});
-		return created;
-	});
+	return auditedInsert(actorId, rateSchedules, 'rate_schedule', toRow(input));
 }
 
 export async function updateRateSchedule(actorId: string, id: string, input: RateScheduleInput) {
-	return db.transaction(async (tx) => {
-		const [before] = await tx.select().from(rateSchedules).where(eq(rateSchedules.id, id));
-		if (!before) return undefined;
-		const row = toRow(input);
-		const [updated] = await tx
-			.update(rateSchedules)
-			.set({ ...row, updatedAt: new Date() })
-			.where(eq(rateSchedules.id, id))
-			.returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'rate_schedule',
-			entityId: id,
-			action: 'update',
-			changes: diffRecords(before, row)
-		});
-		return updated;
-	});
+	return auditedUpdate(actorId, rateSchedules, rateSchedules.id, 'rate_schedule', id, toRow(input));
 }
 
 export async function deleteRateSchedule(actorId: string, id: string): Promise<boolean> {
-	return db.transaction(async (tx) => {
-		const [deleted] = await tx.delete(rateSchedules).where(eq(rateSchedules.id, id)).returning();
-		if (!deleted) return false;
-		await recordAudit(tx, {
-			actorId,
-			entity: 'rate_schedule',
-			entityId: id,
-			action: 'delete',
-			changes: { name: { from: deleted.name, to: null } }
-		});
-		return true;
-	});
+	return auditedDelete(
+		actorId,
+		rateSchedules,
+		rateSchedules.id,
+		'rate_schedule',
+		id,
+		(deleted) => ({
+			name: { from: deleted.name, to: null }
+		})
+	);
 }

@@ -1,5 +1,4 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { energyReadingSchema } from '$lib/schemas/energy-reading';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { createReading } from '$lib/server/services/energy-readings';
@@ -40,7 +39,7 @@ export const actions: Actions = {
 
 		const parsed = energyReadingSchema.safeParse(values);
 		if (!parsed.success) {
-			return fail(400, { values, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, errors: fieldErrors(parsed.error) });
 		}
 
 		try {

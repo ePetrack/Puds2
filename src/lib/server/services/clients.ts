@@ -1,22 +1,15 @@
 import { and, count, desc, eq, ilike, or, type SQL } from 'drizzle-orm';
 import { db } from '../db';
 import { clients, type Client } from '../db/schema';
-import { recordAudit, diffRecords } from './audit';
+import { auditedInsert, auditedUpdate, auditedDelete } from './audited';
 import type { ClientInput } from '$lib/schemas/client';
+import type { Paginated } from './pagination';
 
 export interface ClientListParams {
 	page?: number;
 	perPage?: number;
 	search?: string;
 	status?: Client['status'];
-}
-
-export interface Paginated<T> {
-	items: T[];
-	total: number;
-	page: number;
-	perPage: number;
-	totalPages: number;
 }
 
 function toRow(input: ClientInput) {
@@ -75,17 +68,7 @@ export async function getClient(id: string): Promise<Client | undefined> {
 }
 
 export async function createClient(actorId: string, input: ClientInput): Promise<Client> {
-	return db.transaction(async (tx) => {
-		const [created] = await tx.insert(clients).values(toRow(input)).returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'client',
-			entityId: created.id,
-			action: 'create',
-			changes: diffRecords({}, toRow(input))
-		});
-		return created;
-	});
+	return auditedInsert(actorId, clients, 'client', toRow(input));
 }
 
 export async function updateClient(
@@ -93,39 +76,11 @@ export async function updateClient(
 	id: string,
 	input: ClientInput
 ): Promise<Client | undefined> {
-	return db.transaction(async (tx) => {
-		const [before] = await tx.select().from(clients).where(eq(clients.id, id));
-		if (!before) return undefined;
-
-		const row = toRow(input);
-		const [updated] = await tx
-			.update(clients)
-			.set({ ...row, updatedAt: new Date() })
-			.where(eq(clients.id, id))
-			.returning();
-
-		await recordAudit(tx, {
-			actorId,
-			entity: 'client',
-			entityId: id,
-			action: 'update',
-			changes: diffRecords(before, row)
-		});
-		return updated;
-	});
+	return auditedUpdate(actorId, clients, clients.id, 'client', id, toRow(input));
 }
 
 export async function deleteClient(actorId: string, id: string): Promise<boolean> {
-	return db.transaction(async (tx) => {
-		const [deleted] = await tx.delete(clients).where(eq(clients.id, id)).returning();
-		if (!deleted) return false;
-		await recordAudit(tx, {
-			actorId,
-			entity: 'client',
-			entityId: id,
-			action: 'delete',
-			changes: { name: { from: deleted.name, to: null } }
-		});
-		return true;
-	});
+	return auditedDelete(actorId, clients, clients.id, 'client', id, (deleted) => ({
+		name: { from: deleted.name, to: null }
+	}));
 }

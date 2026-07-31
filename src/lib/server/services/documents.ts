@@ -7,7 +7,7 @@ import { db } from '../db';
 import { documents, clients, projects, buildings, user, type Document } from '../db/schema';
 import { recordAudit } from './audit';
 import type { DocumentMetaInput } from '$lib/schemas/document';
-import type { Paginated } from './clients';
+import type { Paginated } from './pagination';
 
 /** Local filesystem storage root; swap for object storage in a later milestone. */
 function uploadDir(): string {
