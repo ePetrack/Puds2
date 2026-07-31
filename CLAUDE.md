@@ -62,7 +62,11 @@ npm run db:seed        # idempotent demo data
   form-friendly helpers in `helpers.ts` — `optionalText`, `optionalNumber`, `optionalDate`,
   `formDataToObject`, `fieldErrors` — so empty form fields become `undefined`.
 - **Authorization is server-side.** Write actions call `requireRole(locals.user, WRITE_ROLES)`
-  from `src/lib/server/authz.ts`. UI gating alone is never sufficient.
+  from `src/lib/server/authz.ts`. UI gating alone is never sufficient. **Reads are not scoped
+  by tenant yet** — any signed-in user can read every client's data. That is `SEC-1`, a known
+  P0; don't assume a read path is safe because the write path is guarded.
+- **A list page's table headers need `scope="col"`**, and any new dialog should use
+  `Modal.svelte` rather than hand-rolling one — it carries the focus trap and focus restore.
 - **Progressive enhancement**: forms work without JavaScript; `use:enhance` upgrades them.
 - **Server modules read `process.env`**, not `$env`, so the same code runs under SvelteKit,
   Vitest, and `tsx` scripts.

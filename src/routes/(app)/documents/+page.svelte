@@ -152,22 +152,27 @@
 					<thead class="bg-gray-50 dark:bg-gray-800">
 						<tr>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Title</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Linked To</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Size</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Uploaded</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Actions</th
 							>

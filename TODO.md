@@ -41,8 +41,10 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Degree-day import         | `/energy/degree-days` — CSV import that upserts a revised series, coverage panel on the allocation form, one audit row per run     | #11 |
 | List-page shell           | `listHref` + `Pagination` + `ConfirmDelete` shared across 13 list pages; server `deleteError` now surfaced instead of swallowed    | #11 |
 | E2E isolation             | Playwright builds and seeds its own `puds_e2e` per run; `puds_dev` untouched, no manual re-seed                                    | #11 |
+| Dev env loading           | `vite dev`/`preview` read `.env` themselves (`ENV-1`); shell values still win                                                      | #11 |
+| Review passes             | `QOL-2` — modal focus trap + restore, `scope="col"` on 110 headers; authz/upload/N+1 reviewed clean; **`SEC-1` filed**             | #11 |
 
-**Current gate:** lint + typecheck clean · 175 Vitest · 50 Playwright (+1 `fixme`, see
+**Current gate:** lint + typecheck clean · 179 Vitest · 50 Playwright (+1 `fixme`, see
 `ANALYSIS-1`).
 
 ---
@@ -280,20 +282,93 @@ rather than letting each package initialise its own.
 
 ### QOL-2 — Whole-codebase review passes
 
-- **status:** todo
+- **status:** done
 - **priority:** P2
 - **effort:** M
 - **blocked_by:** none
-- **files:** repo-wide
-- **why:** The code has never had a holistic pass — every review so far was scoped to the
-  milestone being shipped. Worth running now that the feature surface is broad:
-  accessibility (forms, tables, modals, keyboard traps), a security review of the auth,
-  upload and download paths since M1, loading/error states on slow or failed loads, and
-  N+1 query checks in the list services.
+- **files:** `src/lib/components/ui/Modal.svelte`, every `.svelte` with a table
+- **why:** The code had never had a holistic pass — every review before this was scoped to
+  the milestone being shipped.
+
+#### Fixed here
+
+- **Modal had no focus trap and no focus restore.** It declared `aria-modal="true"`, which is
+  a promise that the rest of the page is inert, while the browser kept focus on the button
+  behind the overlay and Tab walked straight back into the page underneath. A keyboard or
+  screen-reader user was told they were in a dialog while standing outside it. Now traps Tab
+  in both directions, focuses the first control on open, and hands focus back to the trigger
+  on close. This is the single highest-impact a11y fix available, because all 13 list pages
+  route their delete flow through this component.
+- **The Modal close button had no accessible name** — it was a bare `×`. Now
+  `aria-label="Close dialog"`.
+- **110 `<th>` elements across 17 files, none with `scope`.** Every table in the app.
+  Screen readers could not reliably associate a cell with its column header, which on a
+  utility-bill or reconciliation table is the difference between a number meaning something
+  and meaning nothing. All now carry `scope="col"`.
+
+#### Reviewed and found clean — don't re-audit
+
+- **Write authorization is complete.** Every action under `(app)` calls
+  `requireRole(locals.user, WRITE_ROLES)`; the only action files without it are `/login` and
+  `/logout`, correctly.
+- **Document storage is sound.** `storedName` is a fresh `crypto.randomUUID()`, so a
+  user-supplied file name never reaches a filesystem path; the download route forces
+  `Content-Disposition: attachment` with a sanitised filename and `X-Content-Type-Options:
+nosniff`, so uploaded content cannot execute in the app's origin. A failed DB write unlinks
+  the orphaned file.
+- **No N+1 queries.** Every list service resolves its references with `leftJoin`, and the
+  aggregate pages (`/connections`, `/facilities`, `/reconciliation`) issue a fixed number of
+  queries via `Promise.all` and then group in memory. The only loops containing a query are
+  the CSV importers, which are bounded by file size and run inside one transaction.
+- **Form labels are correct** — `FormField.svelte` wraps its control, associating the label
+  implicitly.
+
+#### Filed, not fixed
+
+- **`SEC-1`** — cross-tenant read access. Far too large for a review PR; see below.
+
 - **acceptance:**
-  - [ ] a11y pass over forms, tables and modals
-  - [ ] security review of auth, RBAC, upload and download paths
-  - [ ] findings either fixed or filed as their own TODO items
+  - [x] a11y pass over forms, tables and modals
+  - [x] security review of auth, RBAC, upload and download paths
+  - [x] findings either fixed or filed as their own TODO items
+
+### SEC-1 — A client-role user can read every other client's data
+
+- **status:** todo
+- **priority:** P0
+- **effort:** L
+- **blocked_by:** none — but the data model question below should be answered first
+- **files:** `src/lib/server/db/schema.ts` (the `user` table), `src/lib/server/authz.ts`,
+  every `list*`/`get*` in `src/lib/server/services/`, `src/hooks.server.ts`
+- **why:** **There is no tenant scoping anywhere.** The `user` table has no `client_id`, no
+  load function filters by the viewer's client, and `requireRole` only gates _writes_. The
+  role system controls what you may change, not what you may see.
+
+  This is not theoretical. Signed in as the seeded `viewer@demo.com` (role `client`):
+  - `/clients` lists **both** State University and Tech College
+  - `/utilities/bills` renders **26 bill rows** spanning both tenants
+
+  For a consultancy whose customers are universities, hospitals and federal sites, that means
+  any client login can read another client's consumption, spend and documents. It is the most
+  serious defect in the codebase.
+
+- **why it was missed:** `tests/e2e/authorization.spec.ts` asserts a client-role user cannot
+  _create_ a client — and its own comment says "Pages render (read access)", treating
+  unrestricted read as intended. The test encodes the bug as correct behaviour.
+- **open question to answer first:** what a user is scoped _to_. A `client` user maps to one
+  client, but a **consultant** manages a portfolio of several, so `user.client_id` alone is
+  not enough — this likely needs a `user_clients` join table, with `admin` unscoped.
+  Decide before writing the migration.
+- **approach once decided:** scope at the **service** layer, not per route, so a new route
+  cannot forget it; pass the viewer (or a resolved set of visible client ids) into every
+  `list*`/`get*`. A `get*` that resolves an id outside the viewer's scope must 404, not 403 —
+  a 403 confirms the record exists.
+- **acceptance:**
+  - [ ] scoping model decided and recorded in `ARCHITECTURE.md`
+  - [ ] every read path filtered by the viewer's visible clients; `admin` unscoped
+  - [ ] direct-id access to an out-of-scope record 404s
+  - [ ] `authorization.spec.ts` rewritten — it currently asserts the bug is correct
+  - [ ] service tests covering a client user, a consultant with two clients, and an admin
 
 ### PLANTS-1 — Design the plant / DER data model
 

@@ -279,15 +279,15 @@
 				<table class="w-full text-sm" data-testid="allocation-table">
 					<thead>
 						<tr class="text-left text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							<th class="py-2 pr-4">Building</th>
-							<th class="py-2 pr-4 text-right">Basis</th>
-							<th class="py-2 pr-4 text-right">Share</th>
-							<th class="py-2 pr-4 text-right">Usage{unit ? ` (${unit})` : ''}</th>
-							<th class="py-2 pr-4 text-right">Demand (kW)</th>
-							<th class="py-2 pr-4 text-right">Energy $</th>
-							<th class="py-2 pr-4 text-right">Demand $</th>
-							<th class="py-2 pr-4 text-right">Fixed $</th>
-							<th class="py-2 text-right">Total</th>
+							<th scope="col" class="py-2 pr-4">Building</th>
+							<th scope="col" class="py-2 pr-4 text-right">Basis</th>
+							<th scope="col" class="py-2 pr-4 text-right">Share</th>
+							<th scope="col" class="py-2 pr-4 text-right">Usage{unit ? ` (${unit})` : ''}</th>
+							<th scope="col" class="py-2 pr-4 text-right">Demand (kW)</th>
+							<th scope="col" class="py-2 pr-4 text-right">Energy $</th>
+							<th scope="col" class="py-2 pr-4 text-right">Demand $</th>
+							<th scope="col" class="py-2 pr-4 text-right">Fixed $</th>
+							<th scope="col" class="py-2 text-right">Total</th>
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-gray-200 dark:divide-gray-700">

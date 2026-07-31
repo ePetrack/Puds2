@@ -178,10 +178,10 @@
 								<tr
 									class="text-left text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>
-									<th class="py-2 pr-4">Period</th>
-									<th class="py-2 pr-4 text-right">Usage</th>
-									<th class="py-2 pr-4 text-right">Total</th>
-									<th class="py-2 text-right">$/Day</th>
+									<th scope="col" class="py-2 pr-4">Period</th>
+									<th scope="col" class="py-2 pr-4 text-right">Usage</th>
+									<th scope="col" class="py-2 pr-4 text-right">Total</th>
+									<th scope="col" class="py-2 text-right">$/Day</th>
 								</tr>
 							</thead>
 							<tbody class="divide-y divide-gray-200 dark:divide-gray-700">

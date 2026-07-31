@@ -44,18 +44,22 @@
 					<thead class="bg-gray-50 dark:bg-gray-800">
 						<tr>
 							<th
+								scope="col"
 								class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Station</th
 							>
 							<th
+								scope="col"
 								class="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Base temp</th
 							>
 							<th
+								scope="col"
 								class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Span</th
 							>
 							<th
+								scope="col"
 								class="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Months</th
 							>
@@ -127,26 +131,32 @@
 					<thead class="bg-gray-50 dark:bg-gray-800">
 						<tr>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Month</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Station</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Base temp</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>HDD</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>CDD</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Source</th
 							>

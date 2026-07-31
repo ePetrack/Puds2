@@ -105,34 +105,42 @@
 					<thead class="bg-gray-50 dark:bg-gray-800">
 						<tr>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Date</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Meter</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Building</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Type</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Usage</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Demand (kW)</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Source</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Actions</th
 							>
