@@ -3,8 +3,9 @@
 	import { invalidateAll } from '$app/navigation';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import { toast } from '$lib/stores/toast';
-	import { formatCurrency, formatNumber } from '$lib/utils/format';
+	import { formatCurrency, formatNumber, formatMonthYear } from '$lib/utils/format';
 	import { ALLOCATION_METHODS, ALLOCATION_METHOD_INFO } from '$lib/schemas/allocation';
+	import { MIN_BASELINE_MONTHS } from '$lib/schemas/degree-days';
 
 	/** Numeric columns arrive as `number` from a preview and as `string` from the DB. */
 	type Amount = number | string | null;
@@ -32,6 +33,13 @@
 			reason?: string;
 			targets: { buildingId: string; label: string }[];
 			warnings: string[];
+			weatherCoverage: {
+				station: string;
+				baseTempF: number;
+				months: number;
+				firstPeriod: string;
+				lastPeriod: string;
+			}[];
 		};
 		saved:
 			| {
@@ -161,6 +169,47 @@
 					</div>
 				</div>
 
+				{#if method === 'weather_normalized'}
+					<div
+						class="rounded-lg border border-gray-200 p-4 text-sm dark:border-gray-700"
+						data-testid="weather-coverage"
+					>
+						<p class="mb-2 font-medium text-gray-900 dark:text-white">Weather data on hand</p>
+						{#if context.weatherCoverage.length === 0}
+							<p class="text-gray-600 dark:text-gray-400">
+								No degree days are stored, so this method has nothing to fit against and will fall
+								back to a square-footage split.
+								<a
+									href="/energy/degree-days/import"
+									class="text-primary-600 hover:underline dark:text-primary-400"
+									>Import a degree-day series</a
+								> first.
+							</p>
+						{:else}
+							<ul class="space-y-0.5 text-gray-600 dark:text-gray-400">
+								{#each context.weatherCoverage as series (series.station + series.baseTempF)}
+									<li>
+										<strong class="text-gray-900 dark:text-gray-100">{series.station}</strong> at
+										{series.baseTempF}°F ·
+										{formatMonthYear(series.firstPeriod)} – {formatMonthYear(series.lastPeriod)} ·
+										{series.months} month{series.months === 1 ? '' : 's'}
+										{#if series.months < MIN_BASELINE_MONTHS}
+											<span class="text-amber-600 dark:text-amber-400"
+												>(under the {MIN_BASELINE_MONTHS}-month minimum)</span
+											>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+							<p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+								A building still needs {MIN_BASELINE_MONTHS} months of its own readings lining up with
+								this series, and a model that meets ASHRAE Guideline 14. Buildings that don't are left
+								out and the reason is recorded.
+							</p>
+						{/if}
+					</div>
+				{/if}
+
 				{#if method === 'fixed_percentage'}
 					<fieldset class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
 						<legend class="px-1 text-sm font-medium text-gray-900 dark:text-white">
@@ -230,15 +279,15 @@
 				<table class="w-full text-sm" data-testid="allocation-table">
 					<thead>
 						<tr class="text-left text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							<th class="py-2 pr-4">Building</th>
-							<th class="py-2 pr-4 text-right">Basis</th>
-							<th class="py-2 pr-4 text-right">Share</th>
-							<th class="py-2 pr-4 text-right">Usage{unit ? ` (${unit})` : ''}</th>
-							<th class="py-2 pr-4 text-right">Demand (kW)</th>
-							<th class="py-2 pr-4 text-right">Energy $</th>
-							<th class="py-2 pr-4 text-right">Demand $</th>
-							<th class="py-2 pr-4 text-right">Fixed $</th>
-							<th class="py-2 text-right">Total</th>
+							<th scope="col" class="py-2 pr-4">Building</th>
+							<th scope="col" class="py-2 pr-4 text-right">Basis</th>
+							<th scope="col" class="py-2 pr-4 text-right">Share</th>
+							<th scope="col" class="py-2 pr-4 text-right">Usage{unit ? ` (${unit})` : ''}</th>
+							<th scope="col" class="py-2 pr-4 text-right">Demand (kW)</th>
+							<th scope="col" class="py-2 pr-4 text-right">Energy $</th>
+							<th scope="col" class="py-2 pr-4 text-right">Demand $</th>
+							<th scope="col" class="py-2 pr-4 text-right">Fixed $</th>
+							<th scope="col" class="py-2 text-right">Total</th>
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-gray-200 dark:divide-gray-700">

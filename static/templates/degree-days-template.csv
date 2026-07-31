@@ -1,0 +1,4 @@
+station,period,base_temp_f,hdd,cdd,source
+KSFO,2026-01,65,612.5,0.0,NOAA GHCN
+KSFO,2026-02,65,498.0,2.5,NOAA GHCN
+KSFO,2026-07,65,18.0,214.5,NOAA GHCN

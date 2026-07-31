@@ -23,8 +23,15 @@ Nothing is running when a session starts. In order:
 
 ```bash
 pg_ctlcluster 16 main start          # Postgres is NOT running; no error message says so
-set -a; source .env; set +a          # npm run dev/build do NOT load .env — see ENV-1
+set -a; source .env; set +a          # still needed for vitest/playwright/tsx — see below
+npm run db:migrate                   # only safe skip is if you know nothing new landed
 ```
+
+`npm run dev` and `npm run preview` now read `.env` themselves (ENV-1). Everything else —
+Vitest, Playwright, `tsx` scripts — does not, so keep sourcing `.env` in the shell.
+
+`pg_ctlcluster` is Debian-specific — that is the **container**. On macOS the equivalent is
+`brew services start postgresql@16`.
 
 If the databases are missing:
 
@@ -50,8 +57,15 @@ PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npx 
 - **`svelte-check` does not catch `$lib/server` leaking into the browser — the build does.**
   Importing a server module (even for a constant) into a `.svelte` file typechecks fine and
   then fails `npm run build`. Shared client/server values belong in `src/lib/schemas/`.
+- **A stale local database shows up as a 500, not as a migration warning.** Nothing checks
+  for pending migrations at boot, so a missing table surfaces as
+  `Failed query: select … from "bill_allocations"` from whichever service touches it first.
+  Run `npm run db:migrate` after every pull.
 - **A Zod `.default()` makes the field _required_ on the inferred input type**, so every
   hand-constructed fixture must supply it. Use `.optional()` and default in the service.
+- **`z.coerce.number()` turns `''` into `0`.** On a CSV import that silently converts a blank
+  cell into a real-looking measurement. Preprocess blanks to `undefined` first — see
+  `requiredNumber` in `src/lib/schemas/degree-days.ts`.
 - **Use Drizzle's `inArray`, not `` sql`x = any(${array})` ``** — the raw form binds the
   array as a scalar and Postgres rejects it with `malformed array literal`.
 - **Adding a value to an existing `pgEnum` needs its own migration** (`ALTER TYPE … ADD
@@ -60,19 +74,31 @@ VALUE`); it can't share a file with a table creation.
   `tag` in `drizzle/meta/_journal.json`, or the migration won't be found.
 - **Don't pipe a check through `tail`** — it masks the exit code and a failing gate looks
   green.
-- **E2E writes into `puds_dev`** (`TEST-1`). Re-seed before any full run, or leftover `E2E …`
-  rows break tests that assume seeded data:
-  `su postgres -c "dropdb --if-exists puds_dev && createdb -O puds puds_dev" && npm run db:migrate && npm run db:seed`
+- **E2E builds its own database** — `globalSetup` drops, recreates, migrates and seeds
+  `puds_e2e` on every run, so `puds_dev` is never touched and no manual re-seed is needed.
+  Override with `E2E_DATABASE_URL`. Don't point it at `puds_dev`: the run starts by dropping
+  it.
 
-## Known-flaky — do not investigate from scratch
+## Perspective / `/analysis` — fixed, but easy to break again
 
-- **`/analysis` Perspective boot (`ANALYSIS-1`).** The `<perspective-viewer>` element
-  silently never registers after any earlier page load in the same browser process. It
-  **reproduces on the default branch**, and memory, SSR payload size, the dataset shape and
-  external fetches are all ruled out **with evidence** in `TODO.md`. Two previous sessions
-  misdiagnosed it — once as caused by a code change it did not cause. Read the item, don't
-  re-bisect. Widening the analysis dataset makes it reliable rather than occasional, which
-  is why a naive bisect will incriminate the wrong thing.
+`ANALYSIS-1` is **resolved**. Two rules keep it that way; both are load-bearing and neither
+is obvious:
+
+- **Perspective must be told where its WASM is.** `<perspective-viewer>` is registered from
+  _inside_ the viewer's WASM, so importing the package is not enough — without
+  `init_client(...)` the element silently never appears, the import still resolves, nothing
+  throws, and `@finos/perspective` (which reads its client off that element) fails with
+  "Missing perspective-client.wasm". The message names a file; the missing thing is the
+  element.
+- **Hand `init_client`/`init_server` an `ArrayBuffer`, never a `Response`.** The binaries are
+  self-extracting, and the unpacker's failure path is `new Uint8Array(input)` — which for a
+  `Response` yields **zero bytes** and produces a module that traps on `unreachable` with no
+  JS frames. `fetch(url).then((r) => r.arrayBuffer())`, and leave stage 0 enabled.
+
+`tests/e2e/analysis-boot.spec.ts` is the regression test: a warm-up navigation, then the
+assertion that the custom element registered. Keep the warm-up — the bug only ever appeared
+after an earlier page load in the same browser process, which is why the ordinary
+`/analysis` spec passed while the page was broken.
 
 ## Gate and shipping
 

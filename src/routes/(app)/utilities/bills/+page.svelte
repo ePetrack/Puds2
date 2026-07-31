@@ -1,9 +1,7 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
-	import Modal from '$lib/components/ui/Modal.svelte';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
+	import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
 	import UtilityNav from '$lib/components/utilities/UtilityNav.svelte';
-	import { toast } from '$lib/stores/toast';
 	import { UTILITY_TYPES, BILL_STATUSES, formatEnumLabel } from '$lib/schemas/utility';
 	import { formatCurrency, formatNumber, formatDateShort } from '$lib/utils/format';
 
@@ -29,15 +27,6 @@
 		paid: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
 		disputed: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
 	};
-
-	function pageHref(page: number) {
-		const params: string[] = [];
-		if (data.filters.account) params.push(`account=${encodeURIComponent(data.filters.account)}`);
-		if (data.filters.type) params.push(`type=${encodeURIComponent(data.filters.type)}`);
-		if (data.filters.status) params.push(`status=${encodeURIComponent(data.filters.status)}`);
-		if (page > 1) params.push(`page=${page}`);
-		return params.length ? `/utilities/bills?${params.join('&')}` : '/utilities/bills';
-	}
 </script>
 
 <svelte:head>
@@ -111,38 +100,47 @@
 					<thead class="bg-gray-50 dark:bg-gray-800">
 						<tr>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Period</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Account</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Type</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Usage</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Total</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>$/Unit</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Due</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Status</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Actions</th
 							>
@@ -219,52 +217,19 @@
 				</table>
 			</div>
 
-			{#if data.bills.totalPages > 1}
-				<div
-					class="flex items-center justify-between border-t border-gray-200 px-6 py-3 dark:border-gray-700"
-				>
-					<p class="text-sm text-gray-500 dark:text-gray-400">
-						Page {data.bills.page} of {data.bills.totalPages}
-					</p>
-					<div class="flex gap-2">
-						{#if data.bills.page > 1}
-							<a href={pageHref(data.bills.page - 1)} class="btn btn-secondary text-sm">Previous</a>
-						{/if}
-						{#if data.bills.page < data.bills.totalPages}
-							<a href={pageHref(data.bills.page + 1)} class="btn btn-secondary text-sm">Next</a>
-						{/if}
-					</div>
-				</div>
-			{/if}
+			<Pagination
+				page={data.bills.page}
+				totalPages={data.bills.totalPages}
+				basePath="/utilities/bills"
+				filters={data.filters}
+			/>
 		{/if}
 	</div>
 </div>
 
-<Modal bind:open={deleteModalOpen} title="Delete Bill">
+<ConfirmDelete bind:open={deleteModalOpen} title="Delete Bill" entity="Bill" id={billToDelete?.id}>
 	<p class="text-gray-700 dark:text-gray-300">
 		Are you sure you want to delete this bill ({formatCurrency(billToDelete?.totalCost)})? This
 		action cannot be undone.
 	</p>
-
-	{#snippet actions()}
-		<button onclick={() => (deleteModalOpen = false)} class="btn btn-secondary">Cancel</button>
-		<form
-			method="POST"
-			action="?/delete"
-			use:enhance={() => {
-				return async ({ result }) => {
-					deleteModalOpen = false;
-					if (result.type === 'success') {
-						toast.success('Bill deleted');
-						await invalidateAll();
-					} else {
-						toast.error('Failed to delete bill');
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={billToDelete?.id ?? ''} />
-			<button type="submit" class="btn btn-danger">Delete</button>
-		</form>
-	{/snippet}
-</Modal>
+</ConfirmDelete>

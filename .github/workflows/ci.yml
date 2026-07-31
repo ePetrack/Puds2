@@ -69,8 +69,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run db:migrate
-      - run: npm run db:seed
+      # No db:migrate/db:seed here — Playwright's globalSetup builds and seeds its own
+      # `puds_e2e` database on every run, so doing it again would only seed the wrong one.
       - run: npm run build
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

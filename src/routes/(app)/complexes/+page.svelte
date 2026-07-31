@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import { toast } from '$lib/stores/toast';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
+	import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
 
 	let { data } = $props();
 
@@ -12,14 +10,6 @@
 	function confirmDelete(complex: { id: string; name: string }) {
 		complexToDelete = complex;
 		deleteModalOpen = true;
-	}
-
-	function pageHref(page: number) {
-		const params: string[] = [];
-		if (data.filters.search) params.push(`search=${encodeURIComponent(data.filters.search)}`);
-		if (data.filters.client) params.push(`client=${encodeURIComponent(data.filters.client)}`);
-		if (page > 1) params.push(`page=${page}`);
-		return params.length ? `/complexes?${params.join('&')}` : '/complexes';
 	}
 </script>
 
@@ -83,22 +73,27 @@
 					<thead class="bg-gray-50 dark:bg-gray-800">
 						<tr>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Name</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Client</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Campus</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Code</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Actions</th
 							>
@@ -157,54 +152,24 @@
 				</table>
 			</div>
 
-			{#if data.complexes.totalPages > 1}
-				<div
-					class="flex items-center justify-between border-t border-gray-200 px-6 py-3 dark:border-gray-700"
-				>
-					<p class="text-sm text-gray-500 dark:text-gray-400">
-						Page {data.complexes.page} of {data.complexes.totalPages}
-					</p>
-					<div class="flex gap-2">
-						{#if data.complexes.page > 1}
-							<a href={pageHref(data.complexes.page - 1)} class="btn btn-secondary text-sm"
-								>Previous</a
-							>
-						{/if}
-						{#if data.complexes.page < data.complexes.totalPages}
-							<a href={pageHref(data.complexes.page + 1)} class="btn btn-secondary text-sm">Next</a>
-						{/if}
-					</div>
-				</div>
-			{/if}
+			<Pagination
+				page={data.complexes.page}
+				totalPages={data.complexes.totalPages}
+				basePath="/complexes"
+				filters={data.filters}
+			/>
 		{/if}
 	</div>
 </div>
 
-<Modal bind:open={deleteModalOpen} title="Delete Complex">
+<ConfirmDelete
+	bind:open={deleteModalOpen}
+	title="Delete Complex"
+	entity="Complex"
+	id={complexToDelete?.id}
+>
 	<p class="text-gray-700 dark:text-gray-300">
 		Are you sure you want to delete <strong>{complexToDelete?.name}</strong>? Buildings will be
 		detached and any master meter on this complex will be removed.
 	</p>
-
-	{#snippet actions()}
-		<button onclick={() => (deleteModalOpen = false)} class="btn btn-secondary">Cancel</button>
-		<form
-			method="POST"
-			action="?/delete"
-			use:enhance={() => {
-				return async ({ result }) => {
-					deleteModalOpen = false;
-					if (result.type === 'success') {
-						toast.success('Complex deleted');
-						await invalidateAll();
-					} else {
-						toast.error('Failed to delete complex');
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={complexToDelete?.id ?? ''} />
-			<button type="submit" class="btn btn-danger">Delete</button>
-		</form>
-	{/snippet}
-</Modal>
+</ConfirmDelete>

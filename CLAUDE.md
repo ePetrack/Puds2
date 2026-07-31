@@ -23,7 +23,7 @@ Tailwind · Vitest · Playwright · GitHub Actions.
 ## Commands
 
 ```bash
-npm run dev            # dev server — see the .env gotcha below
+npm run dev            # dev server (reads .env itself)
 npm run build          # production build (adapter-node)
 npm run check          # svelte-check typecheck
 npm run lint           # prettier --check + eslint
@@ -39,10 +39,10 @@ npm run db:seed        # idempotent demo data
 
 ## Gotchas
 
-- **`npm run dev` does not load `.env`.** Server modules read `process.env` directly, but
-  `vite dev` never copies `.env` into it, so you get `AUTH_SECRET is not set` even with a
-  valid `.env`. Workaround: `set -a; source .env; set +a` first. Tracked as `ENV-1` in
-  `TODO.md` — the fix was proposed once and declined, so **confirm before implementing**.
+- **Only `dev` and `preview` load `.env`.** Server modules read `process.env` directly, and
+  `vite.config.ts` copies `.env` into it via `applyDotEnv` (`ENV-1`). Vitest, Playwright and
+  `tsx` scripts do **not**, so `set -a; source .env; set +a` is still required for those.
+  Values already exported in the shell always win over `.env`.
 - **Merged PRs are never reused.** Restart the work branch from the current default branch
   and open a new PR.
 - **The default branch is `claude/energy-management-platform-011CUPSdL8PbGn5hfJBRnHLd`**,
@@ -62,7 +62,11 @@ npm run db:seed        # idempotent demo data
   form-friendly helpers in `helpers.ts` — `optionalText`, `optionalNumber`, `optionalDate`,
   `formDataToObject`, `fieldErrors` — so empty form fields become `undefined`.
 - **Authorization is server-side.** Write actions call `requireRole(locals.user, WRITE_ROLES)`
-  from `src/lib/server/authz.ts`. UI gating alone is never sufficient.
+  from `src/lib/server/authz.ts`. UI gating alone is never sufficient. **Reads are not scoped
+  by tenant yet** — any signed-in user can read every client's data. That is `SEC-1`, a known
+  P0; don't assume a read path is safe because the write path is guarded.
+- **A list page's table headers need `scope="col"`**, and any new dialog should use
+  `Modal.svelte` rather than hand-rolling one — it carries the focus trap and focus restore.
 - **Progressive enhancement**: forms work without JavaScript; `use:enhance` upgrades them.
 - **Server modules read `process.env`**, not `$env`, so the same code runs under SvelteKit,
   Vitest, and `tsx` scripts.
@@ -78,7 +82,10 @@ Follow the existing pattern (campuses/complexes are the most recent example):
 2. Zod schema in `src/lib/schemas/<entity>.ts`.
 3. Service in `src/lib/server/services/<entity>.ts` — list/get/create/update/delete, each
    mutation writing an audit row.
-4. Routes under `src/routes/(app)/<entity>/`.
+4. Routes under `src/routes/(app)/<entity>/`. A list page composes `Pagination.svelte` and
+   `ConfirmDelete.svelte` from `src/lib/components/ui/` — don't hand-roll paging links or a
+   delete modal, and don't reintroduce a local `pageHref`; `listHref` in
+   `src/lib/utils/pagination.ts` is the one implementation.
 5. Tests: service specs in `tests/unit/`, a journey in `tests/e2e/`.
 6. Seed data in `scripts/seed.ts`, kept idempotent.
 
@@ -133,7 +140,9 @@ fails ASHRAE Guideline 14 or has under 12 months of history is **not used** — 
 gets no basis and the reason is recorded. With nothing normalisable the bill falls back to
 an area split, and `basis` records `requestedMethod` vs `appliedMethod`. Degree days are
 stored (`degree_days`), never fetched at runtime: air-gapped sites can't call a weather API
-and a re-fetched series would break reproducibility. There is no import UI yet.
+and a re-fetched series would break reproducibility. Import them at `/energy/degree-days`; rows
+upsert on `(station, period, base_temp_f)` so a revised series replaces rather than
+duplicates, and the run writes **one** audit row, not one per month.
 
 **Reconciliation** (`/reconciliation`) compares a master meter against its **direct**
 submeters per period. Partial coverage is normal and reported as `unaccounted`, not an

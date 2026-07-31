@@ -116,17 +116,17 @@ are needed.
 
 ## Scripts
 
-| Command                           | Purpose                                                      |
-| --------------------------------- | ------------------------------------------------------------ |
-| `npm run dev`                     | Dev server with hot reload                                   |
-| `npm run build` / `npm start`     | Production build (adapter-node) / run it                     |
-| `npm run check`                   | Type-check with svelte-check                                 |
-| `npm run lint` / `npm run format` | Prettier + ESLint check / auto-format                        |
-| `npm test`                        | Unit & service integration tests (Vitest, needs the test DB) |
-| `npm run test:e2e`                | End-to-end tests (Playwright, needs build + seeded DB)       |
-| `npm run db:generate`             | Generate a migration from schema changes                     |
-| `npm run db:migrate`              | Apply pending migrations                                     |
-| `npm run db:seed`                 | Idempotent demo data                                         |
+| Command                           | Purpose                                                        |
+| --------------------------------- | -------------------------------------------------------------- |
+| `npm run dev`                     | Dev server with hot reload                                     |
+| `npm run build` / `npm start`     | Production build (adapter-node) / run it                       |
+| `npm run check`                   | Type-check with svelte-check                                   |
+| `npm run lint` / `npm run format` | Prettier + ESLint check / auto-format                          |
+| `npm test`                        | Unit & service integration tests (Vitest, needs the test DB)   |
+| `npm run test:e2e`                | End-to-end tests (Playwright, needs a build; seeds its own DB) |
+| `npm run db:generate`             | Generate a migration from schema changes                       |
+| `npm run db:migrate`              | Apply pending migrations                                       |
+| `npm run db:seed`                 | Idempotent demo data                                           |
 
 ## Testing
 
@@ -139,16 +139,17 @@ DATABASE_URL=postgres://puds:puds@localhost:5432/puds_test npm run db:migrate
 npm test
 ```
 
-End-to-end tests run against the production build backed by the seeded dev database:
+End-to-end tests run against the production build, backed by a database of their own:
 
 ```bash
-npm run db:migrate && npm run db:seed && npm run build
+npm run build
 npm run test:e2e
 ```
 
-Note: the e2e suite creates records in `puds_dev` (clients, campuses, meters, …) and
-leaves them behind, so your dev data will accumulate `E2E …` rows. Reset with
-`docker compose down -v && docker compose up -d db && npm run db:migrate && npm run db:seed`.
+Playwright's `globalSetup` drops, recreates, migrates and seeds `puds_e2e` before every
+run, so the suite starts from known data, leaves `puds_dev` untouched, and never needs a
+manual reset. Override the target with `E2E_DATABASE_URL` — but not with `puds_dev`, since
+the run begins by dropping whatever it points at.
 
 CI (GitHub Actions) runs the full gate on every push: lint → typecheck → unit tests →
 build → e2e.

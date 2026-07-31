@@ -174,13 +174,13 @@
 								<tr
 									class="text-left text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>
-									<th class="py-2 pr-4">Period</th>
-									<th class="py-2 pr-4 text-right">Master</th>
-									<th class="py-2 pr-4 text-right">Submeters</th>
-									<th class="py-2 pr-4 text-right">Reporting</th>
-									<th class="py-2 pr-4 text-right">Delta</th>
-									<th class="py-2 pr-4 text-right">Delta %</th>
-									<th class="py-2">Status</th>
+									<th scope="col" class="py-2 pr-4">Period</th>
+									<th scope="col" class="py-2 pr-4 text-right">Master</th>
+									<th scope="col" class="py-2 pr-4 text-right">Submeters</th>
+									<th scope="col" class="py-2 pr-4 text-right">Reporting</th>
+									<th scope="col" class="py-2 pr-4 text-right">Delta</th>
+									<th scope="col" class="py-2 pr-4 text-right">Delta %</th>
+									<th scope="col" class="py-2">Status</th>
 								</tr>
 							</thead>
 							<tbody class="divide-y divide-gray-200 dark:divide-gray-700">

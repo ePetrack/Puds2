@@ -1,9 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
-	import Modal from '$lib/components/ui/Modal.svelte';
+	import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
 	import UtilityNav from '$lib/components/utilities/UtilityNav.svelte';
-	import { toast } from '$lib/stores/toast';
 	import { UTILITY_TYPES, METER_STATUSES, formatEnumLabel } from '$lib/schemas/utility';
 
 	let { data } = $props();
@@ -88,30 +85,37 @@
 					<thead class="bg-gray-50 dark:bg-gray-800">
 						<tr>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Meter #</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Premise</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Type</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Unit</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Account</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Status</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Actions</th
 							>
@@ -184,30 +188,13 @@
 	</div>
 </div>
 
-<Modal bind:open={deleteModalOpen} title="Delete Meter">
+<ConfirmDelete
+	bind:open={deleteModalOpen}
+	title="Delete Meter"
+	entity="Meter"
+	id={meterToDelete?.id}
+>
 	<p class="text-gray-700 dark:text-gray-300">
 		Are you sure you want to delete meter <strong>{meterToDelete?.meterNumber}</strong>?
 	</p>
-
-	{#snippet actions()}
-		<button onclick={() => (deleteModalOpen = false)} class="btn btn-secondary">Cancel</button>
-		<form
-			method="POST"
-			action="?/delete"
-			use:enhance={() => {
-				return async ({ result }) => {
-					deleteModalOpen = false;
-					if (result.type === 'success') {
-						toast.success('Meter deleted');
-						await invalidateAll();
-					} else {
-						toast.error('Failed to delete meter');
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={meterToDelete?.id ?? ''} />
-			<button type="submit" class="btn btn-danger">Delete</button>
-		</form>
-	{/snippet}
-</Modal>
+</ConfirmDelete>

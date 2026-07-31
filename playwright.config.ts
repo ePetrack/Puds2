@@ -1,9 +1,12 @@
 import { defineConfig } from '@playwright/test';
+import { E2E_DATABASE_URL } from './tests/e2e/global-setup';
 
-// E2e runs against a production build backed by the seeded dev/e2e database.
-// CI and local runs both: npm run db:migrate && npm run db:seed && npm run build first.
+// E2e runs against a production build (`npm run build` first) backed by its own throwaway
+// database. `globalSetup` drops, recreates, migrates and seeds `puds_e2e` on every run, so
+// the suite can't accumulate rows in `puds_dev` and never needs a manual re-seed.
 export default defineConfig({
 	testDir: 'tests/e2e',
+	globalSetup: './tests/e2e/global-setup.ts',
 	fullyParallel: false,
 	workers: 1,
 	retries: process.env.CI ? 1 : 0,
@@ -23,7 +26,8 @@ export default defineConfig({
 		env: {
 			PORT: '4173',
 			ORIGIN: 'http://localhost:4173',
-			DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://puds:puds@localhost:5432/puds_dev',
+			// Not `process.env.DATABASE_URL` — that points at puds_dev, which is what this moved away from.
+			DATABASE_URL: E2E_DATABASE_URL,
 			AUTH_SECRET: process.env.AUTH_SECRET ?? 'e2e-test-secret-not-for-production',
 			LOG_LEVEL: 'warn'
 		}

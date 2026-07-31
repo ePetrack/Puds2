@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import { toast } from '$lib/stores/toast';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
+	import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
 	import { formatEnumLabel } from '$lib/schemas/utility';
 	import { formatNumber, formatDateShort, formatMonthLabel } from '$lib/utils/format';
 
@@ -18,14 +16,6 @@
 
 	let maxUsage = $derived(Math.max(...data.series.map((p) => p.usage), 1));
 	let totalUsage = $derived(data.series.reduce((s, p) => s + p.usage, 0));
-
-	function pageHref(page: number) {
-		const params: string[] = [];
-		if (data.filters.meter) params.push(`meter=${encodeURIComponent(data.filters.meter)}`);
-		if (data.filters.building) params.push(`building=${encodeURIComponent(data.filters.building)}`);
-		if (page > 1) params.push(`page=${page}`);
-		return params.length ? `/energy?${params.join('&')}` : '/energy';
-	}
 </script>
 
 <svelte:head>
@@ -39,6 +29,7 @@
 			<p class="text-gray-600 dark:text-gray-400">Meter readings and consumption trends</p>
 		</div>
 		<div class="flex gap-3">
+			<a href="/energy/degree-days" class="btn btn-secondary">Degree Days</a>
 			<a href="/energy/import" class="btn btn-secondary">Import CSV</a>
 			<a href="/energy/new" class="btn btn-primary">+ Add Reading</a>
 		</div>
@@ -114,34 +105,42 @@
 					<thead class="bg-gray-50 dark:bg-gray-800">
 						<tr>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Date</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Meter</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Building</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Type</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Usage</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Demand (kW)</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Source</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Actions</th
 							>
@@ -192,54 +191,24 @@
 				</table>
 			</div>
 
-			{#if data.readings.totalPages > 1}
-				<div
-					class="flex items-center justify-between border-t border-gray-200 px-6 py-3 dark:border-gray-700"
-				>
-					<p class="text-sm text-gray-500 dark:text-gray-400">
-						Page {data.readings.page} of {data.readings.totalPages}
-					</p>
-					<div class="flex gap-2">
-						{#if data.readings.page > 1}
-							<a href={pageHref(data.readings.page - 1)} class="btn btn-secondary text-sm"
-								>Previous</a
-							>
-						{/if}
-						{#if data.readings.page < data.readings.totalPages}
-							<a href={pageHref(data.readings.page + 1)} class="btn btn-secondary text-sm">Next</a>
-						{/if}
-					</div>
-				</div>
-			{/if}
+			<Pagination
+				page={data.readings.page}
+				totalPages={data.readings.totalPages}
+				basePath="/energy"
+				filters={data.filters}
+			/>
 		{/if}
 	</div>
 </div>
 
-<Modal bind:open={deleteModalOpen} title="Delete Reading">
+<ConfirmDelete
+	bind:open={deleteModalOpen}
+	title="Delete Reading"
+	entity="Reading"
+	id={readingToDelete?.id}
+>
 	<p class="text-gray-700 dark:text-gray-300">
 		Are you sure you want to delete the reading for
 		<strong>{formatDateShort(readingToDelete?.readingDate)}</strong>?
 	</p>
-
-	{#snippet actions()}
-		<button onclick={() => (deleteModalOpen = false)} class="btn btn-secondary">Cancel</button>
-		<form
-			method="POST"
-			action="?/delete"
-			use:enhance={() => {
-				return async ({ result }) => {
-					deleteModalOpen = false;
-					if (result.type === 'success') {
-						toast.success('Reading deleted');
-						await invalidateAll();
-					} else {
-						toast.error('Failed to delete reading');
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={readingToDelete?.id ?? ''} />
-			<button type="submit" class="btn btn-danger">Delete</button>
-		</form>
-	{/snippet}
-</Modal>
+</ConfirmDelete>

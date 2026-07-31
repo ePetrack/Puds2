@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { auditLog } from '$lib/server/db/schema';
+import { auditLog, degreeDays } from '$lib/server/db/schema';
 import { createClient } from '$lib/server/services/clients';
 import { createBuilding } from '$lib/server/services/buildings';
 import { createComplex } from '$lib/server/services/complexes';
@@ -24,10 +24,12 @@ let masterBillId: string;
 let buildingBillId: string;
 let sciId: string;
 let stuId: string;
+let sciSubId: string;
+let stuSubId: string;
 
 async function resetTables() {
 	await db.execute(
-		sql`TRUNCATE TABLE audit_log, bill_allocations, utility_bills, energy_readings, meters, utility_accounts, rate_schedules, utility_providers, buildings, complexes, campuses, clients CASCADE`
+		sql`TRUNCATE TABLE audit_log, bill_allocations, utility_bills, energy_readings, degree_days, meters, utility_accounts, rate_schedules, utility_providers, buildings, complexes, campuses, clients CASCADE`
 	);
 }
 
@@ -92,6 +94,8 @@ beforeEach(async () => {
 		unit: 'kwh',
 		status: 'active'
 	});
+	sciSubId = sciSub.id;
+	stuSubId = stuSub.id;
 
 	// 45k + 30k of a 100k master → a 25k common-area remainder.
 	await createReading(TEST_ACTOR, {
@@ -205,6 +209,119 @@ describe('previewAllocation', () => {
 		await expect(
 			previewAllocation(masterBillId, 'fixed_percentage', { [sciId]: 60, [stuId]: 20 })
 		).rejects.toBeInstanceOf(AllocationError);
+	});
+});
+
+describe('previewAllocation — weather_normalized', () => {
+	/**
+	 * Twenty-five months ending with the bill period itself, so both buildings clear the
+	 * 12-month minimum and the June bill has weather to be predicted from.
+	 */
+	const baselineMonths = (() => {
+		const out: string[] = [];
+		for (let i = 24; i >= 0; i--) {
+			const d = new Date(Date.UTC(2026, 5, 1));
+			d.setUTCMonth(d.getUTCMonth() - i);
+			out.push(d.toISOString().slice(0, 10));
+		}
+		return out;
+	})();
+
+	/** A temperate profile: heating-dominated in winter, cooling-dominated in summer. */
+	function weatherFor(period: string) {
+		const m = new Date(period + 'T00:00:00Z').getUTCMonth();
+		return {
+			hdd: Math.round(900 * Math.max(0, Math.cos((m / 12) * 2 * Math.PI)) + 20),
+			cdd: Math.round(600 * Math.max(0, Math.cos(((m - 6) / 12) * 2 * Math.PI)) + 10)
+		};
+	}
+
+	async function seedWeatherAndBaseline() {
+		await db.insert(degreeDays).values(
+			baselineMonths.map((period) => {
+				const w = weatherFor(period);
+				return {
+					station: 'TEST',
+					period,
+					baseTempF: '65',
+					hdd: String(w.hdd),
+					cdd: String(w.cdd),
+					source: 'test'
+				};
+			})
+		);
+
+		// Same weather-independent load, but Student Center is the cooling hog. In a June bill
+		// that should pull its share *above* Science Hall's despite half the floor area — which
+		// is exactly the distortion an area split hides.
+		const plan: [string, number, number][] = [
+			[sciSubId, 5, 5],
+			[stuSubId, 5, 45]
+		];
+		for (const [meterId, bh, bc] of plan) {
+			// Only the months strictly before the bill period form the baseline.
+			for (const period of baselineMonths.slice(0, -1)) {
+				const w = weatherFor(period);
+				await createReading(TEST_ACTOR, {
+					meterId,
+					readingDate: period,
+					usage: 20_000 + bh * w.hdd + bc * w.cdd,
+					readingType: 'actual' as const
+				});
+			}
+		}
+	}
+
+	it('splits on predicted usage, not floor area, when every building fits', async () => {
+		await seedWeatherAndBaseline();
+		const result = await previewAllocation(masterBillId, 'weather_normalized');
+
+		expect(result.basis).toMatchObject({
+			requestedMethod: 'weather_normalized',
+			appliedMethod: 'weather_normalized'
+		});
+
+		const sci = result.lines.find((l) => l.buildingId === sciId)!;
+		const stu = result.lines.find((l) => l.buildingId === stuId)!;
+
+		// The area split would be 66.67 / 33.33. Weather normalisation inverts it.
+		expect(stu.sharePct).toBeGreaterThan(sci.sharePct);
+		expect(result.lines.reduce((a, l) => a + l.totalCost, 0)).toBeCloseTo(16_000, 10);
+	});
+
+	it('records the weather series and the fit so the number can be re-derived later', async () => {
+		await seedWeatherAndBaseline();
+		const result = await previewAllocation(masterBillId, 'weather_normalized');
+
+		const weather = (result.basis as { weather: Record<string, unknown> }).weather;
+		expect(weather).toMatchObject({ station: 'TEST', baseTempF: 65 });
+		expect(weather.periodCdd).toBeGreaterThan(0);
+
+		const buildings = weather.buildings as { buildingId: string; fit?: { months: number } }[];
+		expect(buildings.find((b) => b.buildingId === stuId)!.fit!.months).toBe(24);
+	});
+
+	it('falls back to an area split, and says so, when there is no weather at all', async () => {
+		const result = await previewAllocation(masterBillId, 'weather_normalized');
+
+		expect(result.basis).toMatchObject({
+			requestedMethod: 'weather_normalized',
+			appliedMethod: 'area'
+		});
+		// Falling back silently would be the failure mode: the operator has to be able to see
+		// that the saved split is not the one they asked for.
+		expect(result.warnings.join(' ')).toMatch(/split by square footage instead/);
+
+		const sci = result.lines.find((l) => l.buildingId === sciId)!;
+		expect(sci.sharePct).toBeCloseTo(66.666667, 4);
+	});
+
+	it('reports the stored weather coverage alongside the allocation context', async () => {
+		await seedWeatherAndBaseline();
+		const ctx = await allocationContext(masterBillId);
+
+		expect(ctx.weatherCoverage).toHaveLength(1);
+		expect(ctx.weatherCoverage[0]).toMatchObject({ station: 'TEST', baseTempF: 65, months: 25 });
 	});
 });
 

@@ -1,9 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
-	import Modal from '$lib/components/ui/Modal.svelte';
+	import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
 	import UtilityNav from '$lib/components/utilities/UtilityNav.svelte';
-	import { toast } from '$lib/stores/toast';
 	import { UTILITY_TYPES, formatEnumLabel } from '$lib/schemas/utility';
 	import { formatCurrency, formatDateShort } from '$lib/utils/format';
 
@@ -85,34 +82,42 @@
 					<thead class="bg-gray-50 dark:bg-gray-800">
 						<tr>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Name</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Provider</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Type</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Structure</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Energy Rate</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Fixed Charge</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Effective</th
 							>
 							<th
+								scope="col"
 								class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
 								>Actions</th
 							>
@@ -169,31 +174,14 @@
 	</div>
 </div>
 
-<Modal bind:open={deleteModalOpen} title="Delete Rate Schedule">
+<ConfirmDelete
+	bind:open={deleteModalOpen}
+	title="Delete Rate Schedule"
+	entity="Rate schedule"
+	id={rateToDelete?.id}
+>
 	<p class="text-gray-700 dark:text-gray-300">
 		Are you sure you want to delete <strong>{rateToDelete?.name}</strong>? Accounts referencing this
 		schedule will lose the link.
 	</p>
-
-	{#snippet actions()}
-		<button onclick={() => (deleteModalOpen = false)} class="btn btn-secondary">Cancel</button>
-		<form
-			method="POST"
-			action="?/delete"
-			use:enhance={() => {
-				return async ({ result }) => {
-					deleteModalOpen = false;
-					if (result.type === 'success') {
-						toast.success('Rate schedule deleted');
-						await invalidateAll();
-					} else {
-						toast.error('Failed to delete rate schedule');
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={rateToDelete?.id ?? ''} />
-			<button type="submit" class="btn btn-danger">Delete</button>
-		</form>
-	{/snippet}
-</Modal>
+</ConfirmDelete>

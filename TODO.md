@@ -38,8 +38,14 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Meter chain               | `meter-chain.ts` — ownership + revenue-meter resolution walking `parent_meter_id`, shared with `/connections`                      | #9  |
 | Reconciliation            | `/reconciliation` — master vs submeters per period, partial coverage reported not faulted, missing reads excluded from totals      | #10 |
 | Meter ownership           | `meters.ownership` recorded rather than inferred; ownership and billing separated; unrecorded ownership surfaced as a gap          | #10 |
+| Degree-day import         | `/energy/degree-days` — CSV import that upserts a revised series, coverage panel on the allocation form, one audit row per run     | #11 |
+| List-page shell           | `listHref` + `Pagination` + `ConfirmDelete` shared across 13 list pages; server `deleteError` now surfaced instead of swallowed    | #11 |
+| E2E isolation             | Playwright builds and seeds its own `puds_e2e` per run; `puds_dev` untouched, no manual re-seed                                    | #11 |
+| Dev env loading           | `vite dev`/`preview` read `.env` themselves (`ENV-1`); shell values still win                                                      | #11 |
+| Review passes             | `QOL-2` — modal focus trap + restore, `scope="col"` on 110 headers; authz/upload/N+1 reviewed clean; **`SEC-1` filed**             | #11 |
+| Perspective boot          | `ANALYSIS-1` — WASM handed to `init_client`/`init_server` as bytes; `/analysis` renders reliably, unblocking `ANALYTICS-1`         | #11 |
 
-**Current gate:** lint + typecheck clean · 132 Vitest · 44 Playwright.
+**Current gate:** lint + typecheck clean · 179 Vitest · 51 Playwright.
 
 ---
 
@@ -47,11 +53,11 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 
 ### ENV-1 — `npm run dev` doesn't load `.env`
 
-- **status:** todo
+- **status:** done
 - **priority:** P0
 - **effort:** S
 - **blocked_by:** none
-- **files:** `vite.config.ts`, `src/lib/server/auth.ts`, `src/lib/server/db/index.ts`
+- **files:** `vite.config.ts`, `src/lib/config/dotenv.ts`, `tests/unit/dotenv.test.ts`
 - **why:** `npm run dev` — the first command in the README Quick Start — dies with
   `AUTH_SECRET is not set` even when `.env` is correct. Server modules read `process.env`
   directly (deliberate, so the same code runs under Vitest and `tsx`), but `vite dev`
@@ -59,22 +65,34 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   (`node build/index.js` via shell, `db:migrate`/`db:seed` via `tsx --env-file-if-exists`,
   CI via workflow `env:`), which is why it went unnoticed. **Reproduced** with a valid
   `.env`. Workaround: `set -a; source .env; set +a`.
-- **fix:** in `vite.config.ts`,
-  `Object.assign(process.env, loadEnv(mode, process.cwd(), ''))` (empty prefix loads all
-  keys, not just `VITE_*`). Fixes `dev` and `preview`; no new deps.
-- **note:** this fix was proposed once and declined — confirm before implementing.
+- **note:** the fix was proposed once and declined; **explicitly approved** before this
+  implementation. Don't re-litigate it.
+- **shipped:** `applyDotEnv(mode, envDir)` in `src/lib/config/dotenv.ts`, called from
+  `vite.config.ts`. The empty prefix is the point — Vite exposes only `VITE_*` by default and
+  none of these keys are `VITE_`-prefixed, because they are server secrets.
+- **decisions worth keeping:**
+  - **The real environment wins.** Values already in `process.env` are not overwritten, so
+    `DATABASE_URL=… npm run dev` still works and CI's workflow `env:` still takes precedence
+    over a checked-out `.env`. Blind `Object.assign` would have inverted that.
+  - **It lives in its own module, not inline in the config.** Behaviour in `vite.config.ts`
+    is not reachable from Vitest, and this needed real tests.
+- **verified:** with `DATABASE_URL`, `AUTH_SECRET`, `ORIGIN` and `LOG_LEVEL` all unset in the
+  shell, `npm run dev` serves `/login` 200 and `/clients` 303 (the correct unauthenticated
+  redirect), and `npm run preview` serves `/login` 200 — no `AUTH_SECRET is not set`.
 - **acceptance:**
-  - [ ] `npm run dev` starts from a plain `.env` with no exported shell vars
-  - [ ] `npm run preview` likewise
-  - [ ] a check fails if `loadEnv` is removed (existing e2e runs the built server, so it
-        cannot catch this class of bug)
+  - [x] `npm run dev` starts from a plain `.env` with no exported shell vars
+  - [x] `npm run preview` likewise
+  - [x] a check fails if `loadEnv` is removed — `tests/unit/dotenv.test.ts` asserts the
+        wiring as well as the behaviour, and was confirmed to fail with the call deleted
+        (the e2e suite runs the built server, so it structurally cannot catch this)
 
 ### ANALYTICS-1 — Analysis can't pivot by campus, complex, or the meter chain
 
-- **status:** blocked — the service layer landed, the dataset widening did not
+- **status:** todo — **unblocked**; the service layer landed, the dataset widening did not
 - **priority:** P1
 - **effort:** M
-- **blocked_by:** ANALYSIS-1
+- **blocked_by:** none — `ANALYSIS-1` is fixed, so the widening can now be rebuilt and the
+  `/analysis` page will actually render it
 - **files:** `src/lib/server/services/analysis.ts`,
   `src/lib/server/services/meter-chain.ts`, `src/routes/(app)/analysis/`
 - **why:** M5 added campuses and complexes, but `analysis.ts` contained **zero** references
@@ -134,97 +152,212 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   - [x] handles partial coverage (not every load submetered) without implying error
   - [x] unit tests for a master with 0, 1, and several submeters
 
-### ANALYSIS-1 — the Perspective engine fails to boot after any earlier page load
+### ANALYSIS-1 — the Perspective engine failed to boot after any earlier page load
 
-- **status:** todo
+- **status:** done
 - **priority:** P1
 - **effort:** M
 - **blocked_by:** none
-- **files:** `src/lib/components/PerspectiveViewer.svelte`, `vite.config.ts`
-- **why:** `/analysis` intermittently renders the component's error state — `Missing
-perspective-client.wasm` — instead of the viewer. **This is pre-existing and reproduces on
-  the default branch**, which an earlier writeup of this item got wrong in both directions;
-  the evidence below is what actually holds.
-- **reproduction, on a clean checkout of the default branch:** run a trivial warm-up test
-  (sign in, visit any page), then load `/analysis` in a second Playwright test in the same
-  browser process. `customElements.get('perspective-viewer')` is **`false` eight seconds
-  later**, with **no console output, no page error and no failed request** — the viewer
-  module loads and silently never calls `customElements.define`. `@finos/perspective` then
-  reads its client WASM off that element, finds nothing, and throws.
-- **ruled out, with evidence:**
-  - **Memory** — 16 GB total, 14 GB free at the time of failure.
-  - **SSR payload size** — moving the whole dataset out of the page and behind a
-    `/analysis/data` endpoint changed nothing.
-  - **The dataset shape** — bisected column group by column group; campus/complex, the meter
-    chain columns and the complex-client fallback each pass in isolation.
-  - **An external fetch** — a full request log over `/analysis` shows zero non-localhost
-    requests, so no CDN is involved.
-- **why it looked like a code bug:** widening the dataset shifts timing enough that the
-  latent failure becomes reliable rather than occasional, so a bisect against the widening
-  incriminates it. It is a trigger, not the cause.
-- **what did NOT work** (tried and reverted; don't repeat):
-  - `await customElements.whenDefined('perspective-viewer')` — the element genuinely never
-    defines on the failing path, so this turns a fast error into a hang.
-  - Explicit `init_client`/`init_server` with `?url` WASM imports. This _does_ make Vite emit
-    `perspective-server.wasm`, `perspective-js.wasm` and `perspective-viewer.wasm` as build
-    assets (they are otherwise absent, and then serve 200) and the element _does_ register —
-    but the engine then traps on `unreachable` inside the WASM with no JS frames.
-- **next thing to try:** the explicit-init path is the most promising, since it is the only
-  approach that got the element registered. Pin the official bundler recipe for
-  `@finos/perspective` 3.8 rather than inferring argument order from `.d.ts`, and try
-  `optimizeDeps.exclude` for the perspective packages. Failing that, upgrading the three
-  perspective packages together is cheap to test.
+- **files:** `src/lib/components/PerspectiveViewer.svelte`, `tests/e2e/analysis-boot.spec.ts`
+- **why:** `/analysis` intermittently rendered the component's error state — `Missing
+perspective-client.wasm` — instead of the viewer, with **no console output, no page error
+  and no failed request**. Any earlier page load in the same browser process triggered it.
+
+#### Root cause
+
+Perspective must be **told where its WASM is**; importing the packages is not enough. Two
+things follow from that, and together they explain the total absence of diagnostics:
+
+1. `<perspective-viewer>` is registered from _inside_ the viewer's WASM (a wasm-bindgen
+   `bootstrap` callback), so until `init_client` runs the element never appears. The import
+   still resolves and nothing throws — `perspective-viewer.ts` only re-exports `init_client`;
+   its own doc comment claims registration happens on import, which is stale for 3.x.
+2. `@finos/perspective` reads its client WASM off that element
+   (`customElements.get("perspective-viewer").__wasm_module__` in `get_client()`), so with no
+   element it throws `Missing perspective-client.wasm`. The message names a file, but the
+   thing actually missing is the element.
+
+#### The trap that cost two sessions
+
+Both binaries are **self-extracting**: `load_wasm_stage_0` instantiates the file, then
+unpacks the real module from a custom section. Its failure path is:
+
+```ts
+try {
+	return await extract(wasm as ArrayBuffer);
+} catch (e) {
+	console.warn('Stage 0 wasm loading failed, skipping');
+	return new Uint8Array(wasm as ArrayBuffer);
+}
+```
+
+Passing `fetch(url)` — i.e. a `Response` — makes `extract` throw, and
+`new Uint8Array(aResponse)` silently yields **zero bytes**. The result is a module that
+instantiates and then traps on `unreachable` with no JS frames. Read the bytes with
+`.arrayBuffer()` first and pass the `ArrayBuffer`; leave stage 0 **enabled** (the files are
+compressed, so `disable_stage_0: true` gives `t.psp_is_memory64 is not a function`).
+
+#### What did NOT work (don't repeat)
+
+- `await customElements.whenDefined('perspective-viewer')` — the element genuinely never
+  defines on the failing path, so this turns a fast error into a hang.
+- **`optimizeDeps.exclude`** for the perspective packages — no effect, and it cannot have
+  one: `optimizeDeps` governs **dev** pre-bundling while the e2e suite runs the production
+  build.
+- **Both `.inline` builds.** These do fix registration, but `perspective.inline` calls
+  `init_client` with `perspective-js.wasm` while `get_client()` overrides it with the
+  viewer's module — two different binaries. `worker()` and `table()` succeed and the trap
+  lands in `viewerEl.load(table)`.
+- `init_server(fetch(url))` and `init_server(bytes, true)` — the two halves of the trap
+  above, in both directions.
+
+#### Fixed
+
+`PerspectiveViewer.svelte` imports both `.wasm` files with Vite's `?url`, fetches each to an
+`ArrayBuffer`, then calls `perspective.init_server(serverWasm)` and
+`viewer.init_client(clientWasm)`. The binaries are emitted as real build assets
+(`perspective-viewer` 920 kB, `perspective-server` 2.28 MB) rather than resolved implicitly,
+and nothing is inlined into the JS bundle.
+
+**Verified:** the reproduction — a warm-up navigation, then `/analysis` in a second test in
+the same browser process — passes **6/6** consecutively, and the full suite passes **4/4** at
+51 tests with no `fixme` remaining.
+
 - **acceptance:**
-  - [ ] `/analysis` renders the viewer after an earlier page load in the same browser
-  - [ ] a second e2e loading `/analysis` in a fresh context passes repeatedly
-  - [ ] the WASM binaries are build assets rather than resolved implicitly
+  - [x] `/analysis` renders the viewer after an earlier page load in the same browser
+  - [x] `tests/e2e/analysis-boot.spec.ts` passes with its `test.fixme` removed, repeatedly
+  - [x] the WASM binaries are build assets rather than resolved implicitly
 
 ### QOL-1 — Extract the duplicated list-page shell
 
-- **status:** todo
+- **status:** done
 - **priority:** P1
 - **effort:** M
 - **blocked_by:** none
-- **files:** `src/lib/components/ui/`, and the list pages under `src/routes/(app)/` —
-  `clients`, `buildings`, `campuses`, `complexes`, `projects`, `energy`, `utilities/bills`
+- **files:** `src/lib/utils/pagination.ts`, `src/lib/components/ui/Pagination.svelte`,
+  `src/lib/components/ui/ConfirmDelete.svelte`, and the list pages under `src/routes/(app)/`
 - **why:** Six milestones were each built and shipped independently, so the same list-page
-  scaffolding got copied rather than shared. Measured on the current tree:
-  - `function pageHref` is duplicated verbatim across **7** list pages
-  - the delete-confirm modal + `toast` + `invalidateAll()` block appears in **14** files
-  - ~14k lines of app source are served by only **6** shared components (4 form fields,
-    `Modal`, `Toast`)
+  scaffolding got copied rather than shared. Measured before the change:
+  - `function pageHref` duplicated verbatim across **8** list pages (7 at filing; the
+    degree-day page made it 8, which is the compounding this item is about)
+  - the delete-confirm modal + `toast` + `invalidateAll()` block in **14** files
+  - ~14k lines of app source served by only **6** shared components
 
-  Nothing is broken — this is compounding cost, not a defect. Every new entity currently
-  costs another copy of the same ~150 lines, and a fix to (say) pagination or the delete
-  flow has to be applied 7–14 times.
+  Nothing was broken — this was compounding cost, not a defect.
 
-- **do this before `PLANTS-1`** — plants adds a list page, a form and a detail page, so
-  building it first makes it copy #15 instead of the first consumer of the shared parts.
-- **approach:** extract a `DataTable` / list-page shell (filter form, table, empty state,
-  pagination) and a `ConfirmDelete` component wrapping the modal + toast + invalidate
-  cycle. Keep them dumb and prop-driven; the services and routes don't change.
+- **shipped:**
+  - `listHref(basePath, filters, page)` in `src/lib/utils/pagination.ts` — `pageHref` now
+    exists **zero** times; all eight copies passed the whole `data.filters` object, so one
+    signature covered every caller.
+  - `Pagination.svelte` — the "Page X of Y · Previous / Next" block, which was byte-identical
+    across all eight pages apart from the collection name.
+  - `ConfirmDelete.svelte` — the modal + form + toast + `invalidateAll()` cycle, adopted by
+    13 list pages. The bill detail page's delete and the allocation Remove modal are
+    deliberately left alone: different actions, different payloads, not the list pattern.
+- **one real fix fell out of it:** every delete action already returned
+  `fail(…, { deleteError })`, but **13 of 14** pages discarded it and showed a generic
+  "Failed to delete X". Only `/utilities/providers` surfaced the real reason. The shared
+  component surfaces it everywhere, so "Provider is referenced by utility accounts" now
+  reaches the user instead of being swallowed.
+- **not done, deliberately:** no `DataTable`. The eight tables differ in columns, links,
+  badges and formatters; a prop-driven table covering all of them would be a bigger
+  abstraction than the duplication it removes. The repeated _mechanism_ (paging, delete) is
+  now shared; the repeated _markup_ is left alone until a second consumer justifies it.
 - **acceptance:**
-  - [ ] `pageHref` exists once, not seven times
-  - [ ] delete-confirm flow exists once
-  - [ ] every existing list page uses the shared parts, with no visual change
-  - [ ] `npm test` and `npm run test:e2e` green with no test rewrites (behaviour identical)
+  - [x] `pageHref` exists once, not seven times — it exists zero times
+  - [x] delete-confirm flow exists once
+  - [x] every existing list page uses the shared parts, with no visual change
+  - [x] `npm test` and `npm run test:e2e` green with no test rewrites (behaviour identical)
 
 ### QOL-2 — Whole-codebase review passes
 
-- **status:** todo
+- **status:** done
 - **priority:** P2
 - **effort:** M
 - **blocked_by:** none
-- **files:** repo-wide
-- **why:** The code has never had a holistic pass — every review so far was scoped to the
-  milestone being shipped. Worth running now that the feature surface is broad:
-  accessibility (forms, tables, modals, keyboard traps), a security review of the auth,
-  upload and download paths since M1, loading/error states on slow or failed loads, and
-  N+1 query checks in the list services.
+- **files:** `src/lib/components/ui/Modal.svelte`, every `.svelte` with a table
+- **why:** The code had never had a holistic pass — every review before this was scoped to
+  the milestone being shipped.
+
+#### Fixed here
+
+- **Modal had no focus trap and no focus restore.** It declared `aria-modal="true"`, which is
+  a promise that the rest of the page is inert, while the browser kept focus on the button
+  behind the overlay and Tab walked straight back into the page underneath. A keyboard or
+  screen-reader user was told they were in a dialog while standing outside it. Now traps Tab
+  in both directions, focuses the first control on open, and hands focus back to the trigger
+  on close. This is the single highest-impact a11y fix available, because all 13 list pages
+  route their delete flow through this component.
+- **The Modal close button had no accessible name** — it was a bare `×`. Now
+  `aria-label="Close dialog"`.
+- **110 `<th>` elements across 17 files, none with `scope`.** Every table in the app.
+  Screen readers could not reliably associate a cell with its column header, which on a
+  utility-bill or reconciliation table is the difference between a number meaning something
+  and meaning nothing. All now carry `scope="col"`.
+
+#### Reviewed and found clean — don't re-audit
+
+- **Write authorization is complete.** Every action under `(app)` calls
+  `requireRole(locals.user, WRITE_ROLES)`; the only action files without it are `/login` and
+  `/logout`, correctly.
+- **Document storage is sound.** `storedName` is a fresh `crypto.randomUUID()`, so a
+  user-supplied file name never reaches a filesystem path; the download route forces
+  `Content-Disposition: attachment` with a sanitised filename and `X-Content-Type-Options:
+nosniff`, so uploaded content cannot execute in the app's origin. A failed DB write unlinks
+  the orphaned file.
+- **No N+1 queries.** Every list service resolves its references with `leftJoin`, and the
+  aggregate pages (`/connections`, `/facilities`, `/reconciliation`) issue a fixed number of
+  queries via `Promise.all` and then group in memory. The only loops containing a query are
+  the CSV importers, which are bounded by file size and run inside one transaction.
+- **Form labels are correct** — `FormField.svelte` wraps its control, associating the label
+  implicitly.
+
+#### Filed, not fixed
+
+- **`SEC-1`** — cross-tenant read access. Far too large for a review PR; see below.
+
 - **acceptance:**
-  - [ ] a11y pass over forms, tables and modals
-  - [ ] security review of auth, RBAC, upload and download paths
-  - [ ] findings either fixed or filed as their own TODO items
+  - [x] a11y pass over forms, tables and modals
+  - [x] security review of auth, RBAC, upload and download paths
+  - [x] findings either fixed or filed as their own TODO items
+
+### SEC-1 — A client-role user can read every other client's data
+
+- **status:** todo
+- **priority:** P0
+- **effort:** L
+- **blocked_by:** none — but the data model question below should be answered first
+- **files:** `src/lib/server/db/schema.ts` (the `user` table), `src/lib/server/authz.ts`,
+  every `list*`/`get*` in `src/lib/server/services/`, `src/hooks.server.ts`
+- **why:** **There is no tenant scoping anywhere.** The `user` table has no `client_id`, no
+  load function filters by the viewer's client, and `requireRole` only gates _writes_. The
+  role system controls what you may change, not what you may see.
+
+  This is not theoretical. Signed in as the seeded `viewer@demo.com` (role `client`):
+  - `/clients` lists **both** State University and Tech College
+  - `/utilities/bills` renders **26 bill rows** spanning both tenants
+
+  For a consultancy whose customers are universities, hospitals and federal sites, that means
+  any client login can read another client's consumption, spend and documents. It is the most
+  serious defect in the codebase.
+
+- **why it was missed:** `tests/e2e/authorization.spec.ts` asserts a client-role user cannot
+  _create_ a client — and its own comment says "Pages render (read access)", treating
+  unrestricted read as intended. The test encodes the bug as correct behaviour.
+- **open question to answer first:** what a user is scoped _to_. A `client` user maps to one
+  client, but a **consultant** manages a portfolio of several, so `user.client_id` alone is
+  not enough — this likely needs a `user_clients` join table, with `admin` unscoped.
+  Decide before writing the migration.
+- **approach once decided:** scope at the **service** layer, not per route, so a new route
+  cannot forget it; pass the viewer (or a resolved set of visible client ids) into every
+  `list*`/`get*`. A `get*` that resolves an id outside the viewer's scope must 404, not 403 —
+  a 403 confirms the record exists.
+- **acceptance:**
+  - [ ] scoping model decided and recorded in `ARCHITECTURE.md`
+  - [ ] every read path filtered by the viewer's visible clients; `admin` unscoped
+  - [ ] direct-id access to an out-of-scope record 404s
+  - [ ] `authorization.spec.ts` rewritten — it currently asserts the bug is correct
+  - [ ] service tests covering a client user, a consultant with two clients, and an admin
 
 ### PLANTS-1 — Design the plant / DER data model
 
@@ -386,14 +519,73 @@ perspective-client.wasm` — instead of the viewer. **This is pre-existing and r
     re-fetched from a service that may have revised them.
   - **Fall back, don't fail.** With nothing normalisable the bill is split by area and both
     the warnings and the `basis` record `requestedMethod` vs `appliedMethod`.
-- **still worth doing:** there is no UI for entering or importing degree days — the seed
-  creates a synthetic series and the table is otherwise populated by hand. A CSV import
-  matching the existing bill importer is the obvious next step. Change-point (3P/5P) models
-  would also beat a fixed 65°F base, since the balance point is properly a fitted parameter.
+- **followed up by:** `WEATHER-1` (the CSV import, shipped) and `ALLOC-2` (change-point
+  models, still open).
 - **acceptance:**
   - [x] a method that normalises the basis against degree days for the bill period
   - [x] the persisted `basis` snapshot records the weather source and model fit
   - [x] falls back to the un-normalised basis, with a warning, when data is insufficient
+
+### WEATHER-1 — Degree-day CSV import
+
+- **status:** done
+- **priority:** P1
+- **effort:** S
+- **blocked_by:** none
+- **files:** `src/lib/schemas/degree-days.ts`,
+  `src/lib/server/services/degree-days.ts`, `src/routes/(app)/energy/degree-days/`,
+  `src/lib/components/utilities/BillAllocation.svelte`
+- **why:** `weather_normalized` was the most defensible allocation method available and the
+  only way to get weather into the system was `INSERT` by hand, so in practice selecting it
+  produced a silent fall-back to an area split. The method existed but was unreachable.
+- **decisions worth keeping:**
+  - **Rows upsert on `(station, period, base_temp_f)`.** Weather series get revised at
+    source. An insert-only importer would either reject a corrected file wholesale or double
+    the heating load for every month it already had. `inserted` vs `updated` are reported
+    separately so a revision is visible as a revision.
+  - **Base temperature is part of the key, not a setting.** The same month at a 65°F and a
+    60°F base are different series; merging them would make the shares incomparable.
+  - **An absent `base_temp_f` column defaults to 65°F with a notice; a blank cell is an
+    error.** `z.coerce.number()` turns `''` into `0`, and a month with genuinely zero cooling
+    is ordinary — so a blank CDD would have become a real-looking measurement nobody
+    recorded. Caught by a unit test, and the reason `requiredNumber` exists in the schema.
+  - **One audit row per import run, not per month.** Twenty-four rows of weather logged as
+    twenty-four audit entries buries the fact that matters: who replaced which series, when,
+    over what span. The per-series breakdown lives in the `changes` payload.
+  - **Coverage is shown before the split runs.** Picking `weather_normalized` now lists the
+    stored series and month counts, so the operator sees there is nothing to fit against
+    rather than discovering the fall-back from a warning afterwards.
+- **acceptance:**
+  - [x] CSV import mirroring the bill/reading importers, with a downloadable template
+  - [x] re-import replaces rather than duplicates; unit test asserts the row count is stable
+  - [x] one audit row per run, carrying station, span and counts
+  - [x] `/energy/degree-days` lists the series and its coverage
+  - [x] the allocation form states what weather is on hand
+
+### ALLOC-2 — Change-point (3P/5P) baseline models
+
+- **status:** todo
+- **priority:** P3
+- **effort:** M
+- **blocked_by:** none
+- **files:** `src/lib/server/services/regression.ts`,
+  `src/lib/server/services/weather-normalization.ts`
+- **why:** The current model regresses usage on HDD and CDD at a **fixed** 65°F base. The
+  balance point is properly a _fitted_ parameter — the outdoor temperature at which a
+  particular building starts heating or cooling — and it varies with envelope, internal
+  gains and schedule. ASHRAE Guideline 14 and IPMVP both treat change-point models as the
+  standard form for this reason; a fixed base systematically misfits buildings whose real
+  balance point is far from 65°F, and those are exactly the buildings an allocation is most
+  likely to treat unfairly.
+- **approach:** fit 3P (heating- or cooling-only) and 5P forms by searching the balance
+  point, and keep whichever model wins on CV(RMSE) subject to the existing G14 gate. The
+  `fit` recorded in `basis` gains the fitted balance point so the choice is auditable.
+  Degree days would then need to be stored at several bases, or storage moves to mean
+  monthly temperature — decide which before building.
+- **acceptance:**
+  - [ ] 3P/5P fitting with a searched balance point, unit-tested against known coefficients
+  - [ ] model selection recorded in the persisted `basis`, not just the winning coefficients
+  - [ ] existing fixed-base behaviour still available and still passes its tests
 
 ### UI-1 — Visual pass against the Figma comp
 
@@ -463,17 +655,72 @@ perspective-client.wasm` — instead of the viewer. **This is pre-existing and r
 
 ### TEST-1 — e2e pollutes the dev database
 
-- **status:** todo
+- **status:** done
 - **priority:** P3
 - **effort:** S
 - **blocked_by:** none
-- **files:** `playwright.config.ts`, `tests/e2e/`
-- **why:** The suite runs against seeded `puds_dev` and leaves `E2E …` rows behind, so dev
-  data accumulates run over run. Documented in the README, but a dedicated `puds_e2e`
-  database (or cleanup hook) would be cleaner.
+- **files:** `playwright.config.ts`, `tests/e2e/global-setup.ts`, `.github/workflows/ci.yml`
+- **why:** The suite ran against seeded `puds_dev` and left `E2E …` rows behind, so dev data
+  accumulated run over run and specs that assume seeded data started failing until someone
+  re-created the database by hand. The workaround was documented rather than fixed, and it
+  cost several sessions.
+- **shipped:** a Playwright `globalSetup` that drops (`WITH (FORCE)`, so a leftover
+  connection can't block it), recreates, migrates and seeds `puds_e2e` before every run.
+  The `webServer` is pointed at that database.
+- **decisions worth keeping:**
+  - **`E2E_DATABASE_URL` never falls back to `DATABASE_URL`.** Inheriting it would put the
+    run back on `puds_dev` — and the run _starts by dropping_ whatever it points at, so a
+    silent fallback would be destructive rather than merely wrong.
+  - **The setup reuses `scripts/seed.ts`** instead of an e2e-only fixture, so the demo data
+    the suite asserts against can't drift from what a developer sees.
+  - **CI's `db:migrate` / `db:seed` steps were removed from the e2e job** — they seeded
+    `puds_dev`, which the suite no longer reads. The unit-test job keeps its own `puds_test`
+    setup.
+- **verified:** row counts in `puds_dev` (clients, buildings, meters, readings, tasks,
+  degree days, documents) identical before and after four consecutive full runs, and a cold
+  run with `puds_e2e` absent passes — which is the state CI is in every time.
 - **acceptance:**
-  - [ ] e2e runs leave `puds_dev` unchanged
-  - [ ] CI unaffected
+  - [x] e2e runs leave `puds_dev` unchanged
+  - [x] CI unaffected
+
+### TEST-2 — Intermittent e2e failures in full-suite runs
+
+- **status:** todo
+- **priority:** P2
+- **effort:** M
+- **blocked_by:** none — needs a reproduction before it needs a fix
+- **files:** `playwright.config.ts`, `tests/e2e/`, and whatever the reproduction implicates
+- **why:** Roughly **one full-suite run in three or four** fails a single test, and it is
+  **not always the same test**. Observed across a session of ~30 runs:
+  - `clients CRUD › creates, edits, and deletes a client` (×2)
+  - `sidebar navigation › facility management hub links the hierarchy and shows counts` (×1)
+  - `analysis › loads the Perspective viewer with the dataset` (×1 — but that one is
+    `ANALYSIS-1`, which is separately documented as intermittent; don't conflate them)
+
+  This item was first filed as "intermittent failure in the client delete journey". That was
+  **too narrow** — the delete journey was simply the first instance seen. Whatever this is,
+  it is not specific to one component.
+
+- **what has been ruled out:**
+  - **Not `TEST-1`.** It occurred both before and after the e2e database change, and
+    `puds_dev`/`puds_e2e` contents were verified identical across runs.
+  - **Not `ENV-1`.** The e2e suite runs the built server with its environment supplied
+    explicitly by `playwright.config.ts`; `vite.config.ts` is not involved at runtime.
+  - **Not data accumulation.** The suite reseeds a fresh database every run.
+  - **Not reproducible in isolation** — 12 consecutive runs of `clients.spec.ts` alone were
+    green, as were 12 consecutive full-suite runs immediately after two failures.
+- **why it is easy to miss:** `playwright.config.ts` sets `retries: process.env.CI ? 1 : 0`,
+  so CI silently retries and stays green. Only a local run surfaces it.
+- **what to try next:** the "different test each time, only under the full suite, never in
+  isolation" shape points at a shared-resource or timing problem rather than a component
+  race — the single worker, the one long-lived `node build/index.js` server and its
+  connection pool, or container CPU contention late in a run. Capture a failing run with
+  `--trace on` and compare server-side timing against a passing one before touching any
+  component. Reproducing under deliberate CPU load (`--repeat-each`, or a background
+  busy-loop) is the cheapest way to raise the hit rate.
+- **acceptance:**
+  - [ ] a reliable reproduction, or evidence it is gone
+  - [ ] the cause fixed where it lives, not papered over by enabling local retries
 
 ---
 
