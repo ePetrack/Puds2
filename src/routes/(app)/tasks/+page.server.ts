@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { listTasks, setTaskStatus, deleteTask, listUsers } from '$lib/server/services/tasks';
+import { deleteAction } from '$lib/server/actions';
 import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import { TASK_STATUSES, TASK_PRIORITIES } from '$lib/schemas/task';
 import type { Task } from '$lib/server/db/schema';
@@ -52,16 +53,9 @@ export const actions: Actions = {
 		locals.log.info({ taskId: id, status }, 'task status changed');
 		return { statusChanged: true };
 	},
-	delete: async ({ request, locals }) => {
-		const user = requireRole(locals.user, WRITE_ROLES);
-		const form = await request.formData();
-		const id = String(form.get('id') ?? '');
-		if (!id) return fail(400, { deleteError: 'Missing task id' });
-
-		const deleted = await deleteTask(user.id, id);
-		if (!deleted) return fail(404, { deleteError: 'Task not found' });
-
-		locals.log.info({ taskId: id }, 'task deleted');
-		return { deleted: true };
-	}
+	delete: deleteAction({
+		entity: 'Task',
+		logKey: 'taskId',
+		remove: deleteTask
+	})
 };

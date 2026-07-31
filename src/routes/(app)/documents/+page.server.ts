@@ -1,8 +1,8 @@
 import { fail } from '@sveltejs/kit';
-import { z } from 'zod';
 import { documentMetaSchema, MAX_DOCUMENT_BYTES } from '$lib/schemas/document';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { listDocuments, createDocument, deleteDocument } from '$lib/server/services/documents';
+import { deleteAction } from '$lib/server/actions';
 import { listClients } from '$lib/server/services/clients';
 import { listProjects } from '$lib/server/services/projects';
 import { listBuildings } from '$lib/server/services/buildings';
@@ -45,7 +45,7 @@ export const actions: Actions = {
 
 		const parsed = documentMetaSchema.safeParse(values);
 		if (!parsed.success) {
-			return fail(400, { values, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, errors: fieldErrors(parsed.error) });
 		}
 
 		const doc = await createDocument(user.id, parsed.data, {
@@ -57,16 +57,9 @@ export const actions: Actions = {
 		locals.log.info({ documentId: doc.id, sizeBytes: doc.sizeBytes }, 'document uploaded');
 		return { uploaded: doc.title };
 	},
-	delete: async ({ request, locals }) => {
-		const user = requireRole(locals.user, WRITE_ROLES);
-		const form = await request.formData();
-		const id = String(form.get('id') ?? '');
-		if (!id) return fail(400, { deleteError: 'Missing document id' });
-
-		const deleted = await deleteDocument(user.id, id);
-		if (!deleted) return fail(404, { deleteError: 'Document not found' });
-
-		locals.log.info({ documentId: id }, 'document deleted');
-		return { deleted: true };
-	}
+	delete: deleteAction({
+		entity: 'Document',
+		logKey: 'documentId',
+		remove: deleteDocument
+	})
 };

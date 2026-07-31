@@ -1,8 +1,7 @@
-import { fail } from '@sveltejs/kit';
 import { listCampuses, deleteCampus } from '$lib/server/services/campuses';
+import { deleteAction } from '$lib/server/actions';
 import { optionalUuid } from '$lib/utils/uuid';
 import { listClients } from '$lib/server/services/clients';
-import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
@@ -23,16 +22,9 @@ export const load: PageServerLoad = async ({ url }) => {
 };
 
 export const actions: Actions = {
-	delete: async ({ request, locals }) => {
-		const user = requireRole(locals.user, WRITE_ROLES);
-		const form = await request.formData();
-		const id = String(form.get('id') ?? '');
-		if (!id) return fail(400, { deleteError: 'Missing campus id' });
-
-		const deleted = await deleteCampus(user.id, id);
-		if (!deleted) return fail(404, { deleteError: 'Campus not found' });
-
-		locals.log.info({ campusId: id }, 'campus deleted');
-		return { deleted: true };
-	}
+	delete: deleteAction({
+		entity: 'Campus',
+		logKey: 'campusId',
+		remove: deleteCampus
+	})
 };

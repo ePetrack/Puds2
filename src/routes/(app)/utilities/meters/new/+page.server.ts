@@ -1,5 +1,4 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { meterSchema } from '$lib/schemas/utility';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { createMeter, listMeterOptions, MeterValidationError } from '$lib/server/services/meters';
@@ -35,7 +34,7 @@ export const actions: Actions = {
 
 		const parsed = meterSchema.safeParse(values);
 		if (!parsed.success) {
-			return fail(400, { values, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, errors: fieldErrors(parsed.error) });
 		}
 
 		try {

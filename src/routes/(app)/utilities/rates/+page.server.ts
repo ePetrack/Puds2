@@ -1,7 +1,6 @@
-import { fail } from '@sveltejs/kit';
 import { listRateSchedules, deleteRateSchedule } from '$lib/server/services/rate-schedules';
+import { deleteAction } from '$lib/server/actions';
 import { listProviders } from '$lib/server/services/providers';
-import { requireRole, WRITE_ROLES } from '$lib/server/authz';
 import { UTILITY_TYPES } from '$lib/schemas/utility';
 import type { RateSchedule } from '$lib/server/db/schema';
 import type { Actions, PageServerLoad } from './$types';
@@ -26,16 +25,9 @@ export const load: PageServerLoad = async ({ url }) => {
 };
 
 export const actions: Actions = {
-	delete: async ({ request, locals }) => {
-		const user = requireRole(locals.user, WRITE_ROLES);
-		const form = await request.formData();
-		const id = String(form.get('id') ?? '');
-		if (!id) return fail(400, { deleteError: 'Missing rate schedule id' });
-
-		const deleted = await deleteRateSchedule(user.id, id);
-		if (!deleted) return fail(404, { deleteError: 'Rate schedule not found' });
-
-		locals.log.info({ rateScheduleId: id }, 'rate schedule deleted');
-		return { deleted: true };
-	}
+	delete: deleteAction({
+		entity: 'Rate schedule',
+		logKey: 'rateScheduleId',
+		remove: deleteRateSchedule
+	})
 };

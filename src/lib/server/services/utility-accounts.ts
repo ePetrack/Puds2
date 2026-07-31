@@ -7,7 +7,7 @@ import {
 	clients,
 	type UtilityAccount
 } from '../db/schema';
-import { recordAudit, diffRecords } from './audit';
+import { auditedInsert, auditedUpdate, auditedDelete } from './audited';
 import type { UtilityAccountInput } from '$lib/schemas/utility';
 
 export type AccountWithRefs = UtilityAccount & {
@@ -97,54 +97,29 @@ export async function findAccountByNumber(
 }
 
 export async function createAccount(actorId: string, input: UtilityAccountInput) {
-	return db.transaction(async (tx) => {
-		const [created] = await tx.insert(utilityAccounts).values(toRow(input)).returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'utility_account',
-			entityId: created.id,
-			action: 'create',
-			changes: diffRecords({}, toRow(input))
-		});
-		return created;
-	});
+	return auditedInsert(actorId, utilityAccounts, 'utility_account', toRow(input));
 }
 
 export async function updateAccount(actorId: string, id: string, input: UtilityAccountInput) {
-	return db.transaction(async (tx) => {
-		const [before] = await tx.select().from(utilityAccounts).where(eq(utilityAccounts.id, id));
-		if (!before) return undefined;
-		const row = toRow(input);
-		const [updated] = await tx
-			.update(utilityAccounts)
-			.set({ ...row, updatedAt: new Date() })
-			.where(eq(utilityAccounts.id, id))
-			.returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'utility_account',
-			entityId: id,
-			action: 'update',
-			changes: diffRecords(before, row)
-		});
-		return updated;
-	});
+	return auditedUpdate(
+		actorId,
+		utilityAccounts,
+		utilityAccounts.id,
+		'utility_account',
+		id,
+		toRow(input)
+	);
 }
 
 export async function deleteAccount(actorId: string, id: string): Promise<boolean> {
-	return db.transaction(async (tx) => {
-		const [deleted] = await tx
-			.delete(utilityAccounts)
-			.where(eq(utilityAccounts.id, id))
-			.returning();
-		if (!deleted) return false;
-		await recordAudit(tx, {
-			actorId,
-			entity: 'utility_account',
-			entityId: id,
-			action: 'delete',
-			changes: { accountNumber: { from: deleted.accountNumber, to: null } }
-		});
-		return true;
-	});
+	return auditedDelete(
+		actorId,
+		utilityAccounts,
+		utilityAccounts.id,
+		'utility_account',
+		id,
+		(deleted) => ({
+			accountNumber: { from: deleted.accountNumber, to: null }
+		})
+	);
 }

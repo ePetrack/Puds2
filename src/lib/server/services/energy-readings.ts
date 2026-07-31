@@ -4,7 +4,7 @@ import { energyReadings, meters, buildings, type EnergyReading, type Meter } fro
 import { recordAudit } from './audit';
 import { parseCSV } from '../csv';
 import { energyReadingSchema, type EnergyReadingInput } from '$lib/schemas/energy-reading';
-import type { Paginated } from './clients';
+import type { Paginated } from './pagination';
 
 export type ReadingWithRefs = EnergyReading & {
 	meterNumber: string | null;

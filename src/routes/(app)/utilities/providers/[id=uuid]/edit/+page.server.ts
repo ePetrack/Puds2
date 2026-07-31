@@ -1,5 +1,4 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { providerSchema } from '$lib/schemas/utility';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { getProvider, updateProvider } from '$lib/server/services/providers';
@@ -36,7 +35,7 @@ export const actions: Actions = {
 
 		const parsed = providerSchema.safeParse({ ...values, utilityTypes });
 		if (!parsed.success) {
-			return fail(400, { values, utilityTypes, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, utilityTypes, errors: fieldErrors(parsed.error) });
 		}
 
 		const updated = await updateProvider(user.id, params.id, parsed.data);

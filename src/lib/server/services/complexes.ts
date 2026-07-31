@@ -1,9 +1,9 @@
 import { and, asc, count, desc, eq, ilike, type SQL } from 'drizzle-orm';
 import { db } from '../db';
 import { complexes, campuses, clients, buildings, type Complex, type Client } from '../db/schema';
-import { recordAudit, diffRecords } from './audit';
+import { auditedInsert, auditedUpdate, auditedDelete } from './audited';
 import type { ComplexInput } from '$lib/schemas/complex';
-import type { Paginated } from './clients';
+import type { Paginated } from './pagination';
 
 export interface ComplexListParams {
 	page?: number;
@@ -118,17 +118,7 @@ export async function listComplexOptions(
 }
 
 export async function createComplex(actorId: string, input: ComplexInput): Promise<Complex> {
-	return db.transaction(async (tx) => {
-		const [created] = await tx.insert(complexes).values(toRow(input)).returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'complex',
-			entityId: created.id,
-			action: 'create',
-			changes: diffRecords({}, toRow(input))
-		});
-		return created;
-	});
+	return auditedInsert(actorId, complexes, 'complex', toRow(input));
 }
 
 export async function updateComplex(
@@ -136,37 +126,11 @@ export async function updateComplex(
 	id: string,
 	input: ComplexInput
 ): Promise<Complex | undefined> {
-	return db.transaction(async (tx) => {
-		const [before] = await tx.select().from(complexes).where(eq(complexes.id, id));
-		if (!before) return undefined;
-		const row = toRow(input);
-		const [updated] = await tx
-			.update(complexes)
-			.set({ ...row, updatedAt: new Date() })
-			.where(eq(complexes.id, id))
-			.returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'complex',
-			entityId: id,
-			action: 'update',
-			changes: diffRecords(before, row)
-		});
-		return updated;
-	});
+	return auditedUpdate(actorId, complexes, complexes.id, 'complex', id, toRow(input));
 }
 
 export async function deleteComplex(actorId: string, id: string): Promise<boolean> {
-	return db.transaction(async (tx) => {
-		const [deleted] = await tx.delete(complexes).where(eq(complexes.id, id)).returning();
-		if (!deleted) return false;
-		await recordAudit(tx, {
-			actorId,
-			entity: 'complex',
-			entityId: id,
-			action: 'delete',
-			changes: { name: { from: deleted.name, to: null } }
-		});
-		return true;
-	});
+	return auditedDelete(actorId, complexes, complexes.id, 'complex', id, (deleted) => ({
+		name: { from: deleted.name, to: null }
+	}));
 }

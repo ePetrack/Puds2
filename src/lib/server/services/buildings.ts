@@ -1,9 +1,9 @@
 import { and, count, desc, eq, ilike, type SQL } from 'drizzle-orm';
 import { db } from '../db';
 import { buildings, clients, campuses, complexes, type Building, type Client } from '../db/schema';
-import { recordAudit, diffRecords } from './audit';
+import { auditedInsert, auditedUpdate, auditedDelete } from './audited';
 import type { BuildingInput } from '$lib/schemas/building';
-import type { Paginated } from './clients';
+import type { Paginated } from './pagination';
 
 export interface BuildingListParams {
 	page?: number;
@@ -111,17 +111,7 @@ export async function getBuilding(id: string): Promise<BuildingWithClient | unde
 }
 
 export async function createBuilding(actorId: string, input: BuildingInput): Promise<Building> {
-	return db.transaction(async (tx) => {
-		const [created] = await tx.insert(buildings).values(toRow(input)).returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'building',
-			entityId: created.id,
-			action: 'create',
-			changes: diffRecords({}, toRow(input))
-		});
-		return created;
-	});
+	return auditedInsert(actorId, buildings, 'building', toRow(input));
 }
 
 export async function updateBuilding(
@@ -129,39 +119,11 @@ export async function updateBuilding(
 	id: string,
 	input: BuildingInput
 ): Promise<Building | undefined> {
-	return db.transaction(async (tx) => {
-		const [before] = await tx.select().from(buildings).where(eq(buildings.id, id));
-		if (!before) return undefined;
-
-		const row = toRow(input);
-		const [updated] = await tx
-			.update(buildings)
-			.set({ ...row, updatedAt: new Date() })
-			.where(eq(buildings.id, id))
-			.returning();
-
-		await recordAudit(tx, {
-			actorId,
-			entity: 'building',
-			entityId: id,
-			action: 'update',
-			changes: diffRecords(before, row)
-		});
-		return updated;
-	});
+	return auditedUpdate(actorId, buildings, buildings.id, 'building', id, toRow(input));
 }
 
 export async function deleteBuilding(actorId: string, id: string): Promise<boolean> {
-	return db.transaction(async (tx) => {
-		const [deleted] = await tx.delete(buildings).where(eq(buildings.id, id)).returning();
-		if (!deleted) return false;
-		await recordAudit(tx, {
-			actorId,
-			entity: 'building',
-			entityId: id,
-			action: 'delete',
-			changes: { name: { from: deleted.name, to: null } }
-		});
-		return true;
-	});
+	return auditedDelete(actorId, buildings, buildings.id, 'building', id, (deleted) => ({
+		name: { from: deleted.name, to: null }
+	}));
 }

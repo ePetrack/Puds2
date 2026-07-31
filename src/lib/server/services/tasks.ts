@@ -2,9 +2,10 @@ import { and, asc, count, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../db';
 import { tasks, projects, clients, user, type Task } from '../db/schema';
-import { recordAudit, diffRecords } from './audit';
+import { recordAudit } from './audit';
+import { auditedInsert, auditedUpdate, auditedDelete } from './audited';
 import type { TaskInput } from '$lib/schemas/task';
-import type { Paginated } from './clients';
+import type { Paginated } from './pagination';
 
 export type TaskWithRefs = Task & {
 	assigneeName: string | null;
@@ -104,20 +105,9 @@ export async function getTask(id: string): Promise<Task | undefined> {
 }
 
 export async function createTask(actorId: string, input: TaskInput): Promise<Task> {
-	return db.transaction(async (tx) => {
-		const [created] = await tx
-			.insert(tasks)
-			.values({ ...toRow(input), createdBy: actorId })
-			.returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'task',
-			entityId: created.id,
-			action: 'create',
-			changes: diffRecords({}, toRow(input))
-		});
-		return created;
-	});
+	// `createdBy` is set here rather than in `toRow`, because it comes from the session rather
+	// than the form — it is the one field a task's author cannot choose.
+	return auditedInsert(actorId, tasks, 'task', { ...toRow(input), createdBy: actorId });
 }
 
 export async function updateTask(
@@ -125,24 +115,7 @@ export async function updateTask(
 	id: string,
 	input: TaskInput
 ): Promise<Task | undefined> {
-	return db.transaction(async (tx) => {
-		const [before] = await tx.select().from(tasks).where(eq(tasks.id, id));
-		if (!before) return undefined;
-		const row = toRow(input);
-		const [updated] = await tx
-			.update(tasks)
-			.set({ ...row, updatedAt: new Date() })
-			.where(eq(tasks.id, id))
-			.returning();
-		await recordAudit(tx, {
-			actorId,
-			entity: 'task',
-			entityId: id,
-			action: 'update',
-			changes: diffRecords(before, row)
-		});
-		return updated;
-	});
+	return auditedUpdate(actorId, tasks, tasks.id, 'task', id, toRow(input));
 }
 
 /** Quick status transition used by the list view. */
@@ -167,18 +140,9 @@ export async function setTaskStatus(actorId: string, id: string, status: Task['s
 }
 
 export async function deleteTask(actorId: string, id: string): Promise<boolean> {
-	return db.transaction(async (tx) => {
-		const [deleted] = await tx.delete(tasks).where(eq(tasks.id, id)).returning();
-		if (!deleted) return false;
-		await recordAudit(tx, {
-			actorId,
-			entity: 'task',
-			entityId: id,
-			action: 'delete',
-			changes: { title: { from: deleted.title, to: null } }
-		});
-		return true;
-	});
+	return auditedDelete(actorId, tasks, tasks.id, 'task', id, (deleted) => ({
+		title: { from: deleted.title, to: null }
+	}));
 }
 
 /** Users for assignee dropdowns. */

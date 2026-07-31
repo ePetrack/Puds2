@@ -1,5 +1,4 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { taskSchema } from '$lib/schemas/task';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { createTask, listUsers } from '$lib/server/services/tasks';
@@ -28,7 +27,7 @@ export const actions: Actions = {
 
 		const parsed = taskSchema.safeParse(values);
 		if (!parsed.success) {
-			return fail(400, { values, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, errors: fieldErrors(parsed.error) });
 		}
 
 		const task = await createTask(user.id, parsed.data);

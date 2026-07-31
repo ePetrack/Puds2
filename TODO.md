@@ -386,6 +386,55 @@ nosniff`, so uploaded content cannot execute in the app's origin. A failed DB wr
   - [x] `diffRecords` covered including its exclusions
   - [x] the analysis dataset covered before `ANALYTICS-1` rewrites it
 
+### QA-3 — Targeted refactor of the route and service duplication
+
+- **status:** done
+- **priority:** P2
+- **effort:** M
+- **blocked_by:** none
+- **files:** `src/lib/server/actions.ts`, `src/lib/server/services/audited.ts`,
+  `src/lib/server/services/pagination.ts`, `src/lib/schemas/helpers.ts`, and the services and
+  list routes that now use them
+- **why:** Six milestones built independently left the same shapes copied across the route and
+  service layers. Measured before: 24 validate-and-save blocks, 24 `as z.ZodError` casts, 13
+  delete actions, 13 transaction-plus-audit trios, 9 services importing `Paginated` from a
+  sibling entity service.
+- **shipped:**
+  - **`fieldErrors` made generic over `ZodError<T>`.** Every call site carried
+    `parsed.error as z.ZodError` because zod v4 returns the generic form and the signature
+    took the bare one. **24 casts deleted** — a cast repeated everywhere is a signature that
+    doesn't fit, not a language limitation.
+  - **`deleteAction({ entity, remove, … })`** replaces the 13 hand-written delete actions,
+    keeping the exact wording each produced so `ConfirmDelete`'s `deleteError` path is
+    unchanged. It also folds in the FK-conflict case `/utilities/providers` handled by hand,
+    so a delete blocked by a reference is a **409 with a reason** rather than a 500.
+  - **`auditedInsert` / `auditedUpdate` / `auditedDelete`** carry the transaction-plus-audit
+    ceremony for the **9** services whose CRUD is canonical. The invariant that every mutation
+    writes `audit_log` in the same transaction was previously restated 13 times and could
+    therefore be got wrong in one of them.
+  - **`Paginated` moved** to `services/pagination.ts` with `pageBounds`/`paginate`.
+- **type safety was the deciding constraint.** The helpers are generic over the table
+  (`InferInsertModel<T>` / `InferSelectModel<T>`), so callers keep full checking; the casts
+  Drizzle's builder generics force are confined to that one file. **Verified** by passing a
+  non-existent column and confirming `svelte-check` still rejects it — without that the
+  extraction would have traded compile-time safety for line count, which is a bad trade in a
+  codebase whose point is auditable correctness.
+- **not converted, deliberately:** `meters` (premise validation), `projects` (join table),
+  `energy-readings` and `documents` (bespoke create paths), and the 24 create/edit route
+  actions, several of which carry per-entity logic. The repeated _mechanism_ is shared; the
+  repeated _shape_ stays visible.
+- **one regression, caught by the tests written first:** `createTask` was not canonical — it
+  inserted `createdBy: actorId` alongside `toRow(input)`, and the conversion dropped it. The
+  `tasks` spec failed immediately. This is the whole argument for the defects → tests →
+  refactor ordering, and it is why `QA-2` came first.
+- **result:** src net **−276 lines**, with **no existing test modified** — the contract for a
+  refactor.
+- **acceptance:**
+  - [x] zero `as z.ZodError` casts
+  - [x] the delete action exists once
+  - [x] `Paginated` no longer imported from an entity service
+  - [x] existing suites pass unmodified; e2e green three consecutive runs
+
 ### SEC-1 — A client-role user can read every other client's data
 
 - **status:** todo

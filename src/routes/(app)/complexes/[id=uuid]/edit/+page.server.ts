@@ -1,5 +1,4 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { z } from 'zod';
 import { complexSchema } from '$lib/schemas/complex';
 import { formDataToObject, fieldErrors } from '$lib/schemas/helpers';
 import { getComplex, updateComplex } from '$lib/server/services/complexes';
@@ -41,7 +40,7 @@ export const actions: Actions = {
 
 		const parsed = complexSchema.safeParse(values);
 		if (!parsed.success) {
-			return fail(400, { values, errors: fieldErrors(parsed.error as z.ZodError) });
+			return fail(400, { values, errors: fieldErrors(parsed.error) });
 		}
 
 		const updated = await updateComplex(user.id, params.id, parsed.data);
