@@ -23,7 +23,7 @@ Tailwind · Vitest · Playwright · GitHub Actions.
 ## Commands
 
 ```bash
-npm run dev            # dev server — see the .env gotcha below
+npm run dev            # dev server (reads .env itself)
 npm run build          # production build (adapter-node)
 npm run check          # svelte-check typecheck
 npm run lint           # prettier --check + eslint
@@ -39,10 +39,10 @@ npm run db:seed        # idempotent demo data
 
 ## Gotchas
 
-- **`npm run dev` does not load `.env`.** Server modules read `process.env` directly, but
-  `vite dev` never copies `.env` into it, so you get `AUTH_SECRET is not set` even with a
-  valid `.env`. Workaround: `set -a; source .env; set +a` first. Tracked as `ENV-1` in
-  `TODO.md` — the fix was proposed once and declined, so **confirm before implementing**.
+- **Only `dev` and `preview` load `.env`.** Server modules read `process.env` directly, and
+  `vite.config.ts` copies `.env` into it via `applyDotEnv` (`ENV-1`). Vitest, Playwright and
+  `tsx` scripts do **not**, so `set -a; source .env; set +a` is still required for those.
+  Values already exported in the shell always win over `.env`.
 - **Merged PRs are never reused.** Restart the work branch from the current default branch
   and open a new PR.
 - **The default branch is `claude/energy-management-platform-011CUPSdL8PbGn5hfJBRnHLd`**,

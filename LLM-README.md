@@ -23,9 +23,12 @@ Nothing is running when a session starts. In order:
 
 ```bash
 pg_ctlcluster 16 main start          # Postgres is NOT running; no error message says so
-set -a; source .env; set +a          # npm run dev/build do NOT load .env — see ENV-1
+set -a; source .env; set +a          # still needed for vitest/playwright/tsx — see below
 npm run db:migrate                   # only safe skip is if you know nothing new landed
 ```
+
+`npm run dev` and `npm run preview` now read `.env` themselves (ENV-1). Everything else —
+Vitest, Playwright, `tsx` scripts — does not, so keep sourcing `.env` in the shell.
 
 `pg_ctlcluster` is Debian-specific — that is the **container**. On macOS the equivalent is
 `brew services start postgresql@16`.

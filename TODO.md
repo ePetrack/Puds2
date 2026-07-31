@@ -51,11 +51,11 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 
 ### ENV-1 — `npm run dev` doesn't load `.env`
 
-- **status:** todo
+- **status:** done
 - **priority:** P0
 - **effort:** S
 - **blocked_by:** none
-- **files:** `vite.config.ts`, `src/lib/server/auth.ts`, `src/lib/server/db/index.ts`
+- **files:** `vite.config.ts`, `src/lib/config/dotenv.ts`, `tests/unit/dotenv.test.ts`
 - **why:** `npm run dev` — the first command in the README Quick Start — dies with
   `AUTH_SECRET is not set` even when `.env` is correct. Server modules read `process.env`
   directly (deliberate, so the same code runs under Vitest and `tsx`), but `vite dev`
@@ -63,15 +63,26 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   (`node build/index.js` via shell, `db:migrate`/`db:seed` via `tsx --env-file-if-exists`,
   CI via workflow `env:`), which is why it went unnoticed. **Reproduced** with a valid
   `.env`. Workaround: `set -a; source .env; set +a`.
-- **fix:** in `vite.config.ts`,
-  `Object.assign(process.env, loadEnv(mode, process.cwd(), ''))` (empty prefix loads all
-  keys, not just `VITE_*`). Fixes `dev` and `preview`; no new deps.
-- **note:** this fix was proposed once and declined — confirm before implementing.
+- **note:** the fix was proposed once and declined; **explicitly approved** before this
+  implementation. Don't re-litigate it.
+- **shipped:** `applyDotEnv(mode, envDir)` in `src/lib/config/dotenv.ts`, called from
+  `vite.config.ts`. The empty prefix is the point — Vite exposes only `VITE_*` by default and
+  none of these keys are `VITE_`-prefixed, because they are server secrets.
+- **decisions worth keeping:**
+  - **The real environment wins.** Values already in `process.env` are not overwritten, so
+    `DATABASE_URL=… npm run dev` still works and CI's workflow `env:` still takes precedence
+    over a checked-out `.env`. Blind `Object.assign` would have inverted that.
+  - **It lives in its own module, not inline in the config.** Behaviour in `vite.config.ts`
+    is not reachable from Vitest, and this needed real tests.
+- **verified:** with `DATABASE_URL`, `AUTH_SECRET`, `ORIGIN` and `LOG_LEVEL` all unset in the
+  shell, `npm run dev` serves `/login` 200 and `/clients` 303 (the correct unauthenticated
+  redirect), and `npm run preview` serves `/login` 200 — no `AUTH_SECRET is not set`.
 - **acceptance:**
-  - [ ] `npm run dev` starts from a plain `.env` with no exported shell vars
-  - [ ] `npm run preview` likewise
-  - [ ] a check fails if `loadEnv` is removed (existing e2e runs the built server, so it
-        cannot catch this class of bug)
+  - [x] `npm run dev` starts from a plain `.env` with no exported shell vars
+  - [x] `npm run preview` likewise
+  - [x] a check fails if `loadEnv` is removed — `tests/unit/dotenv.test.ts` asserts the
+        wiring as well as the behaviour, and was confirmed to fail with the call deleted
+        (the e2e suite runs the built server, so it structurally cannot catch this)
 
 ### ANALYTICS-1 — Analysis can't pivot by campus, complex, or the meter chain
 
@@ -608,35 +619,44 @@ rather than letting each package initialise its own.
   - [x] e2e runs leave `puds_dev` unchanged
   - [x] CI unaffected
 
-### TEST-2 — Intermittent failure in the client delete journey
+### TEST-2 — Intermittent e2e failures in full-suite runs
 
 - **status:** todo
-- **priority:** P3
-- **effort:** S
+- **priority:** P2
+- **effort:** M
 - **blocked_by:** none — needs a reproduction before it needs a fix
-- **files:** `tests/e2e/clients.spec.ts`, `src/lib/components/ui/ConfirmDelete.svelte`,
-  `src/lib/components/ui/Modal.svelte`
-- **why:** `clients CRUD › creates, edits, and deletes a client` failed **twice in roughly
-  26 full-suite runs** during the `TEST-1` work. Everything else passed in the same runs.
-  Filed rather than fixed because it is genuinely not reproducible yet, and inventing a fix
-  for a race nobody has observed closely is how a flake gets buried instead of removed.
+- **files:** `playwright.config.ts`, `tests/e2e/`, and whatever the reproduction implicates
+- **why:** Roughly **one full-suite run in three or four** fails a single test, and it is
+  **not always the same test**. Observed across a session of ~30 runs:
+  - `clients CRUD › creates, edits, and deletes a client` (×2)
+  - `sidebar navigation › facility management hub links the hierarchy and shows counts` (×1)
+  - `analysis › loads the Perspective viewer with the dataset` (×1 — but that one is
+    `ANALYSIS-1`, which is separately documented as intermittent; don't conflate them)
+
+  This item was first filed as "intermittent failure in the client delete journey". That was
+  **too narrow** — the delete journey was simply the first instance seen. Whatever this is,
+  it is not specific to one component.
+
 - **what has been ruled out:**
-  - **Not `TEST-1`.** It reproduced both before and after the database change, and
+  - **Not `TEST-1`.** It occurred both before and after the e2e database change, and
     `puds_dev`/`puds_e2e` contents were verified identical across runs.
-  - **Not data accumulation.** The test creates a uniquely-named client and asserts on that
-    name; the suite now starts from a freshly seeded database every run regardless.
-  - **Not reproducible in isolation** — 12 consecutive runs of `clients.spec.ts` alone, and
-    12 consecutive full-suite runs after the failures, all green.
+  - **Not `ENV-1`.** The e2e suite runs the built server with its environment supplied
+    explicitly by `playwright.config.ts`; `vite.config.ts` is not involved at runtime.
+  - **Not data accumulation.** The suite reseeds a fresh database every run.
+  - **Not reproducible in isolation** — 12 consecutive runs of `clients.spec.ts` alone were
+    green, as were 12 consecutive full-suite runs immediately after two failures.
 - **why it is easy to miss:** `playwright.config.ts` sets `retries: process.env.CI ? 1 : 0`,
   so CI silently retries and stays green. Only a local run surfaces it.
-- **where to look first:** the last three lines of the test — click row Delete, click the
-  dialog's Delete, then assert "No clients match your filters". `ConfirmDelete` closes the
-  modal _before_ awaiting `invalidateAll()` (as the hand-rolled copies did), and `Modal` has
-  200ms fade/fly transitions, so the dialog is still in the DOM while the list reloads.
+- **what to try next:** the "different test each time, only under the full suite, never in
+  isolation" shape points at a shared-resource or timing problem rather than a component
+  race — the single worker, the one long-lived `node build/index.js` server and its
+  connection pool, or container CPU contention late in a run. Capture a failing run with
+  `--trace on` and compare server-side timing against a passing one before touching any
+  component. Reproducing under deliberate CPU load (`--repeat-each`, or a background
+  busy-loop) is the cheapest way to raise the hit rate.
 - **acceptance:**
-  - [ ] a reliable reproduction (e.g. `--repeat-each` under CPU load), or evidence it is
-        gone
-  - [ ] the race fixed at the component, not papered over with a local retry
+  - [ ] a reliable reproduction, or evidence it is gone
+  - [ ] the cause fixed where it lives, not papered over by enabling local retries
 
 ---
 
