@@ -44,6 +44,7 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Dev env loading           | `vite dev`/`preview` read `.env` themselves (`ENV-1`); shell values still win                                                      | #11 |
 | Review passes             | `QOL-2` — modal focus trap + restore, `scope="col"` on 110 headers; authz/upload/N+1 reviewed clean; **`SEC-1` filed**             | #11 |
 | Perspective boot          | `ANALYSIS-1` — WASM handed to `init_client`/`init_server` as bytes; `/analysis` renders reliably, unblocking `ANALYTICS-1`         | #11 |
+| QA/QC pass                | Malformed ids 404 not 500, `handleError` + error pages, five untested services covered, route/service ceremony shared (−276 lines) | #12 |
 
 **Current gate:** lint + typecheck clean · 231 Vitest · 68 Playwright.
 
