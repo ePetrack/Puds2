@@ -79,22 +79,26 @@ VALUE`); it can't share a file with a table creation.
   Override with `E2E_DATABASE_URL`. Don't point it at `puds_dev`: the run starts by dropping
   it.
 
-## Known-flaky — do not investigate from scratch
+## Perspective / `/analysis` — fixed, but easy to break again
 
-- **`/analysis` Perspective boot (`ANALYSIS-1`).** The `<perspective-viewer>` element
-  silently never registers after any earlier page load in the same browser process. It
-  **reproduces on the default branch**; memory, SSR payload size, dataset shape and external
-  fetches are all ruled out **with evidence** in `TODO.md`. Two previous sessions
-  misdiagnosed it — once as caused by a code change it did not cause. Read the item, don't
-  re-bisect. Widening the analysis dataset makes it reliable rather than occasional, which
-  is why a naive bisect will incriminate the wrong thing.
+`ANALYSIS-1` is **resolved**. Two rules keep it that way; both are load-bearing and neither
+is obvious:
 
-  **Root cause is established:** Perspective calls `customElements.define` from _inside_ its
-  WASM (a wasm-bindgen `bootstrap` callback), so `await import('@finos/perspective-viewer')`
-  resolving proves nothing and no error is raised. `TODO.md` records four attempts and where
-  the remaining trap is. The reproduction is checked in as
-  `tests/e2e/analysis-boot.spec.ts`, marked `test.fixme` — lift it as part of the fix rather
-  than writing a new one.
+- **Perspective must be told where its WASM is.** `<perspective-viewer>` is registered from
+  _inside_ the viewer's WASM, so importing the package is not enough — without
+  `init_client(...)` the element silently never appears, the import still resolves, nothing
+  throws, and `@finos/perspective` (which reads its client off that element) fails with
+  "Missing perspective-client.wasm". The message names a file; the missing thing is the
+  element.
+- **Hand `init_client`/`init_server` an `ArrayBuffer`, never a `Response`.** The binaries are
+  self-extracting, and the unpacker's failure path is `new Uint8Array(input)` — which for a
+  `Response` yields **zero bytes** and produces a module that traps on `unreachable` with no
+  JS frames. `fetch(url).then((r) => r.arrayBuffer())`, and leave stage 0 enabled.
+
+`tests/e2e/analysis-boot.spec.ts` is the regression test: a warm-up navigation, then the
+assertion that the custom element registered. Keep the warm-up — the bug only ever appeared
+after an earlier page load in the same browser process, which is why the ordinary
+`/analysis` spec passed while the page was broken.
 
 ## Gate and shipping
 

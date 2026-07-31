@@ -35,7 +35,7 @@ test.describe('analysis engine boot', () => {
 		await expect(page).toHaveURL(/clients/);
 	});
 
-	test.fixme('registers the custom element and reports no load error', async ({ page }) => {
+	test('registers the custom element and reports no load error', async ({ page }) => {
 		await signIn(page);
 		await page.goto('/analysis');
 

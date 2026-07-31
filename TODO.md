@@ -43,9 +43,9 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | E2E isolation             | Playwright builds and seeds its own `puds_e2e` per run; `puds_dev` untouched, no manual re-seed                                    | #11 |
 | Dev env loading           | `vite dev`/`preview` read `.env` themselves (`ENV-1`); shell values still win                                                      | #11 |
 | Review passes             | `QOL-2` — modal focus trap + restore, `scope="col"` on 110 headers; authz/upload/N+1 reviewed clean; **`SEC-1` filed**             | #11 |
+| Perspective boot          | `ANALYSIS-1` — WASM handed to `init_client`/`init_server` as bytes; `/analysis` renders reliably, unblocking `ANALYTICS-1`         | #11 |
 
-**Current gate:** lint + typecheck clean · 179 Vitest · 50 Playwright (+1 `fixme`, see
-`ANALYSIS-1`).
+**Current gate:** lint + typecheck clean · 179 Vitest · 51 Playwright.
 
 ---
 
@@ -88,10 +88,11 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 
 ### ANALYTICS-1 — Analysis can't pivot by campus, complex, or the meter chain
 
-- **status:** blocked — the service layer landed, the dataset widening did not
+- **status:** todo — **unblocked**; the service layer landed, the dataset widening did not
 - **priority:** P1
 - **effort:** M
-- **blocked_by:** ANALYSIS-1
+- **blocked_by:** none — `ANALYSIS-1` is fixed, so the widening can now be rebuilt and the
+  `/analysis` page will actually render it
 - **files:** `src/lib/server/services/analysis.ts`,
   `src/lib/server/services/meter-chain.ts`, `src/routes/(app)/analysis/`
 - **why:** M5 added campuses and complexes, but `analysis.ts` contained **zero** references
@@ -151,93 +152,81 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
   - [x] handles partial coverage (not every load submetered) without implying error
   - [x] unit tests for a master with 0, 1, and several submeters
 
-### ANALYSIS-1 — the Perspective engine fails to boot after any earlier page load
+### ANALYSIS-1 — the Perspective engine failed to boot after any earlier page load
 
-- **status:** todo
+- **status:** done
 - **priority:** P1
 - **effort:** M
 - **blocked_by:** none
-- **files:** `src/lib/components/PerspectiveViewer.svelte`, `vite.config.ts`
-- **why:** `/analysis` intermittently renders the component's error state — `Missing
-perspective-client.wasm` — instead of the viewer. **This is pre-existing and reproduces on
-  the default branch**, which an earlier writeup of this item got wrong in both directions;
-  the evidence below is what actually holds.
-- **reproduction, on a clean checkout of the default branch:** run a trivial warm-up test
-  (sign in, visit any page), then load `/analysis` in a second Playwright test in the same
-  browser process. `customElements.get('perspective-viewer')` is **`false` eight seconds
-  later**, with **no console output, no page error and no failed request** — the viewer
-  module loads and silently never calls `customElements.define`. `@finos/perspective` then
-  reads its client WASM off that element, finds nothing, and throws.
-- **ruled out, with evidence:**
-  - **Memory** — 16 GB total, 14 GB free at the time of failure.
-  - **SSR payload size** — moving the whole dataset out of the page and behind a
-    `/analysis/data` endpoint changed nothing.
-  - **The dataset shape** — bisected column group by column group; campus/complex, the meter
-    chain columns and the complex-client fallback each pass in isolation.
-  - **An external fetch** — a full request log over `/analysis` shows zero non-localhost
-    requests, so no CDN is involved.
-- **why it looked like a code bug:** widening the dataset shifts timing enough that the
-  latent failure becomes reliable rather than occasional, so a bisect against the widening
-  incriminates it. It is a trigger, not the cause.
-- **the reproduction is now checked in** as `tests/e2e/analysis-boot.spec.ts` — a warm-up
-  navigation, then the assertion, marked `test.fixme`. Lift the `fixme` as part of the fix;
-  don't write a new reproduction.
+- **files:** `src/lib/components/PerspectiveViewer.svelte`, `tests/e2e/analysis-boot.spec.ts`
+- **why:** `/analysis` intermittently rendered the component's error state — `Missing
+perspective-client.wasm` — instead of the viewer, with **no console output, no page error
+  and no failed request**. Any earlier page load in the same browser process triggered it.
 
-#### Root cause (established, stop re-deriving it)
+#### Root cause
 
-`customElements.define('perspective-viewer', …)` is **not called by JavaScript**. Grepping
-`node_modules/@finos/perspective-viewer/dist/esm/perspective-viewer.js` shows the single
-`customElements.define(e,f)` sits inside a function invoked only from
-`__wbg_bootstrap_3185de985e76df2f` — a **wasm-bindgen import callback**. Registration
-therefore happens from _inside_ the WASM, and only once that module instantiates.
+Perspective must be **told where its WASM is**; importing the packages is not enough. Two
+things follow from that, and together they explain the total absence of diagnostics:
 
-That is why the symptom has no diagnostics: `await import('@finos/perspective-viewer')`
-resolves whether or not the WASM ever instantiated, so a resolved import proves nothing and
-nothing throws. `@finos/perspective` then calls, in its own bundle:
+1. `<perspective-viewer>` is registered from _inside_ the viewer's WASM (a wasm-bindgen
+   `bootstrap` callback), so until `init_client` runs the element never appears. The import
+   still resolves and nothing throws — `perspective-viewer.ts` only re-exports `init_client`;
+   its own doc comment claims registration happens on import, which is stale for 3.x.
+2. `@finos/perspective` reads its client WASM off that element
+   (`customElements.get("perspective-viewer").__wasm_module__` in `get_client()`), so with no
+   element it throws `Missing perspective-client.wasm`. The message names a file, but the
+   thing actually missing is the element.
 
-```js
-let n = customElements.get('perspective-viewer');
-if (n) v = Promise.resolve(n.__wasm_module__);
-else if (v === undefined) throw new Error('Missing perspective-client.wasm');
+#### The trap that cost two sessions
+
+Both binaries are **self-extracting**: `load_wasm_stage_0` instantiates the file, then
+unpacks the real module from a custom section. Its failure path is:
+
+```ts
+try {
+	return await extract(wasm as ArrayBuffer);
+} catch (e) {
+	console.warn('Stage 0 wasm loading failed, skipping');
+	return new Uint8Array(wasm as ArrayBuffer);
+}
 ```
 
-— i.e. **the element is where `@finos/perspective` gets its client WASM from.** The error
-message names a missing file, but the actual missing thing is the element.
+Passing `fetch(url)` — i.e. a `Response` — makes `extract` throw, and
+`new Uint8Array(aResponse)` silently yields **zero bytes**. The result is a module that
+instantiates and then traps on `unreachable` with no JS frames. Read the bytes with
+`.arrayBuffer()` first and pass the `ArrayBuffer`; leave stage 0 **enabled** (the files are
+compressed, so `disable_stage_0: true` gives `t.psp_is_memory64 is not a function`).
 
-#### What did NOT work (tried and reverted; don't repeat)
+#### What did NOT work (don't repeat)
 
 - `await customElements.whenDefined('perspective-viewer')` — the element genuinely never
   defines on the failing path, so this turns a fast error into a hang.
-- **`optimizeDeps.exclude`** for all four `@finos/perspective*` packages. No effect, and in
-  hindsight it cannot have one: `optimizeDeps` governs **dev** pre-bundling, while the e2e
-  suite runs the **production build**. Don't spend time here again.
-- **Both inline builds** (`perspective-viewer.inline.js` + `perspective.inline.js`, which
-  embed their WASM and `await init_client()`/`init_server()` at module top level). This
-  **fixes registration** — `customElements.get(…)` is `true`, the "Missing
-  perspective-client.wasm" error is gone, and it reproduced clean 5/5 in isolation. But the
-  page still hangs on the spinner, and probing each step shows `perspective.worker()` and
-  `worker.table(data)` both **succeed**; the trap (`pageerror: unreachable`) happens in
-  **`viewerEl.load(table)`**.
-- **Inline viewer + normal `@finos/perspective` with an explicit `init_server`.** Vite does
-  emit `perspective-server.wasm` as a build asset and it serves 200. `init_server(fetch(url))`
-  (stage-0 decompression on, the default) traps on `unreachable`; `init_server(bytes, true)`
-  (stage-0 skipped) fails differently with `t.psp_is_memory64 is not a function`. So stage-0
-  handling is required and is not the variable.
+- **`optimizeDeps.exclude`** for the perspective packages — no effect, and it cannot have
+  one: `optimizeDeps` governs **dev** pre-bundling while the e2e suite runs the production
+  build.
+- **Both `.inline` builds.** These do fix registration, but `perspective.inline` calls
+  `init_client` with `perspective-js.wasm` while `get_client()` overrides it with the
+  viewer's module — two different binaries. `worker()` and `table()` succeed and the trap
+  lands in `viewerEl.load(table)`.
+- `init_server(fetch(url))` and `init_server(bytes, true)` — the two halves of the trap
+  above, in both directions.
 
-#### Where this leaves it
+#### Fixed
 
-The failure is **not** asset resolution, MIME type, or load ordering — those are all fixed by
-the inline builds. What remains is that the viewer element and `@finos/perspective` end up
-holding **two different client-WASM instances**, and a `Table` created by one traps when
-loaded into the other. The next attempt should make both share a single client instance —
-e.g. inline `@finos/perspective` only (it initialises a matched client+server pair) and
-register the element by calling the viewer's exported `init_client` with that same module,
-rather than letting each package initialise its own.
+`PerspectiveViewer.svelte` imports both `.wasm` files with Vite's `?url`, fetches each to an
+`ArrayBuffer`, then calls `perspective.init_server(serverWasm)` and
+`viewer.init_client(clientWasm)`. The binaries are emitted as real build assets
+(`perspective-viewer` 920 kB, `perspective-server` 2.28 MB) rather than resolved implicitly,
+and nothing is inlined into the JS bundle.
+
+**Verified:** the reproduction — a warm-up navigation, then `/analysis` in a second test in
+the same browser process — passes **6/6** consecutively, and the full suite passes **4/4** at
+51 tests with no `fixme` remaining.
 
 - **acceptance:**
-  - [ ] `/analysis` renders the viewer after an earlier page load in the same browser
-  - [ ] `tests/e2e/analysis-boot.spec.ts` passes with its `test.fixme` removed, repeatedly
-  - [ ] the WASM binaries are build assets rather than resolved implicitly
+  - [x] `/analysis` renders the viewer after an earlier page load in the same browser
+  - [x] `tests/e2e/analysis-boot.spec.ts` passes with its `test.fixme` removed, repeatedly
+  - [x] the WASM binaries are build assets rather than resolved implicitly
 
 ### QOL-1 — Extract the duplicated list-page shell
 

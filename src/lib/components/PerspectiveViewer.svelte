@@ -19,11 +19,36 @@
 
 		(async () => {
 			try {
-				// Client-only: Perspective is WASM-backed and must never run during SSR
-				await import('@finos/perspective-viewer');
+				// Client-only: Perspective is WASM-backed and must never run during SSR.
+				const [viewer, perspectiveModule, clientWasmUrl, serverWasmUrl] = await Promise.all([
+					import('@finos/perspective-viewer'),
+					import('@finos/perspective'),
+					import('@finos/perspective-viewer/dist/wasm/perspective-viewer.wasm?url'),
+					import('@finos/perspective/dist/wasm/perspective-server.wasm?url')
+				]);
 				await import('@finos/perspective-viewer-datagrid');
 				await import('@finos/perspective-viewer-d3fc');
-				const perspective = (await import('@finos/perspective')).default;
+				const perspective = perspectiveModule.default;
+
+				// Perspective must be told where its WASM is; importing the packages is not enough.
+				//
+				// `<perspective-viewer>` is registered from *inside* the viewer's WASM, so until
+				// `init_client` runs the element simply never appears — the import resolves, nothing
+				// throws, and `@finos/perspective` (which reads its client off that element) then
+				// fails with "Missing perspective-client.wasm". That is ANALYSIS-1.
+				//
+				// Both binaries are self-extracting: Perspective instantiates the file, then unpacks
+				// the real module from a custom section. That unpacking is given an **ArrayBuffer**,
+				// never a `Response` — on failure its fallback is `new Uint8Array(input)`, which for a
+				// Response silently yields *zero bytes* and produces a module that traps on
+				// `unreachable` with no JS frames. Reading the bytes first is the whole fix.
+				const [clientWasm, serverWasm] = await Promise.all([
+					fetch(clientWasmUrl.default).then((r) => r.arrayBuffer()),
+					fetch(serverWasmUrl.default).then((r) => r.arrayBuffer())
+				]);
+
+				perspective.init_server(serverWasm);
+				await viewer.init_client(clientWasm);
 
 				const worker = await perspective.worker();
 				const table = await worker.table(data as Record<string, unknown>[]);
