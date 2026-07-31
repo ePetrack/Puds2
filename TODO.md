@@ -45,7 +45,7 @@ effort:   S (<half day) | M (1-2 days) | L (a milestone)
 | Review passes             | `QOL-2` — modal focus trap + restore, `scope="col"` on 110 headers; authz/upload/N+1 reviewed clean; **`SEC-1` filed**             | #11 |
 | Perspective boot          | `ANALYSIS-1` — WASM handed to `init_client`/`init_server` as bytes; `/analysis` renders reliably, unblocking `ANALYTICS-1`         | #11 |
 
-**Current gate:** lint + typecheck clean · 179 Vitest · 68 Playwright.
+**Current gate:** lint + typecheck clean · 231 Vitest · 68 Playwright.
 
 ---
 
@@ -355,6 +355,36 @@ nosniff`, so uploaded content cannot execute in the app's origin. A failed DB wr
   - [x] a well-formed id that matches nothing still 404s — the guard doesn't swallow it
   - [x] malformed list filters render the list instead of erroring
   - [x] unhandled errors are logged against their request id and the page shows it
+
+### QA-2 — Five services shipped with no tests
+
+- **status:** done
+- **priority:** P1
+- **effort:** M
+- **blocked_by:** none
+- **files:** `tests/unit/audit.test.ts`, `providers.service.test.ts`,
+  `rate-schedules.service.test.ts`, `utility-accounts.service.test.ts`,
+  `analysis.service.test.ts`
+- **why:** ~506 lines of service code had **no unit coverage at all**, and the refactor in
+  `QA-3` was about to move code underneath it. `audit.ts` was the worst of them:
+  `diffRecords` is the compliance backbone — every mutation in the app records its change
+  through it — and what it _omits_ matters as much as what it keeps, because an audit trail
+  that quietly drops a field looks complete while being wrong.
+- **shipped:** 52 tests. `diffRecords` is now pinned on the cases that are easy to get wrong
+  — undefined vs null treated as the same absence, keys absent from the new record meaning
+  "not part of this write" rather than "removed", `createdAt`/`updatedAt` always excluded,
+  dates compared by value, arrays and `jsonb` compared structurally, and a numeric string
+  held distinct from a number. All 14 passed first run, so this locks in correct behaviour
+  rather than fixing broken behaviour.
+- **one test asserts a known defect on purpose:** `analysis.service.test.ts` has a test named
+  `KNOWN GAP: a complex master meter reading has no building and no client`. That is the
+  `ANALYTICS-1` bug — the reading query reaches the client through `buildings.client_id`, so
+  a meter whose premise is a _complex_ lands unattributed. Pinning it means the fix is a
+  deliberate edit here rather than a surprise. **Update it when `ANALYTICS-1` lands.**
+- **acceptance:**
+  - [x] every service under `src/lib/server/services/` has a unit test
+  - [x] `diffRecords` covered including its exclusions
+  - [x] the analysis dataset covered before `ANALYTICS-1` rewrites it
 
 ### SEC-1 — A client-role user can read every other client's data
 
